@@ -3,8 +3,8 @@ use ark_std::UniformRand;
 use ark_std::rand::Rng;
 
 use crate::group::{
-    DlogTable, G1, G2, Gt, Matrix, PairingProduct, Scalar, ShapeError, VectorOps, g1_mul, g1_mul_vec, g2_mul,
-    g2_mul_vec, gt_generator, int_matrix, int_vector, masked_g1, masked_g2, random_vector, scale_g2,
+    DlogTable, G1, G2, G2Prepared, Gt, Matrix, PairingProduct, Scalar, ShapeError, VectorOps, g1_mul, g1_mul_vec,
+    g2_mul, g2_mul_vec, gt_generator, int_matrix, int_vector, masked_g1, masked_g2, prepare, random_vector, scale_g2,
 };
 
 #[derive(Clone, Debug)]
@@ -28,6 +28,8 @@ pub struct Key<E: Pairing> {
     pub f: Matrix<Scalar<E>>,
     pub s1: G1<E>,
     pub s2: G1<E>,
+    pub af: Vec<G1<E>>,
+    pub fb: Vec<G2<E>>,
 }
 
 #[derive(Clone, Debug)]
@@ -63,11 +65,13 @@ pub fn keygen<E: Pairing, Row: AsRef<[i64]>, R: Rng + ?Sized>(
 ) -> Result<Key<E>, ShapeError> {
     let f = int_matrix::<Scalar<E>, Row>(function, msk.n)?;
     let gamma = Scalar::<E>::rand(rng);
-    let s1 = g1_mul::<E>(msk.a.inner(&f.mul_vec(&msk.b)) + gamma * msk.w);
+    let fb = f.mul_vec(&msk.b);
     Ok(Key {
-        f,
-        s1,
+        s1: g1_mul::<E>(msk.a.inner(&fb) + gamma * msk.w),
         s2: g1_mul::<E>(gamma),
+        af: g1_mul_vec::<E>(&msk.a.mul_mat(&f)),
+        fb: g2_mul_vec::<E>(&fb),
+        f,
     })
 }
 
@@ -91,11 +95,25 @@ pub fn encrypt<E: Pairing, R: Rng + ?Sized>(
     })
 }
 
-pub fn decrypt<E: Pairing>(table: &DlogTable<E>, pk: &PublicKey<E>, sk: &Key<E>, ct: &Ciphertext<E>) -> Option<i64> {
+pub fn decrypt<E: Pairing>(table: &DlogTable<E>, sk: &Key<E>, ct: &Ciphertext<E>) -> Option<i64> {
+    decrypt_with(table, sk, &sk.fb, ct)
+}
+
+pub fn decrypt_many<E: Pairing>(table: &DlogTable<E>, sk: &Key<E>, cts: &[Ciphertext<E>]) -> Vec<Option<i64>> {
+    let fb = prepare::<E>(&sk.fb);
+    cts.iter().map(|ct| decrypt_with(table, sk, &fb, ct)).collect()
+}
+
+fn decrypt_with<E: Pairing>(
+    table: &DlogTable<E>,
+    sk: &Key<E>,
+    fb: &[impl Clone + Into<G2Prepared<E>>],
+    ct: &Ciphertext<E>,
+) -> Option<i64> {
     let mut e = PairingProduct::default();
     e.mul_bilinear(&ct.c, &sk.f, &ct.d);
-    e.div_bilinear(&pk.a, &sk.f, &ct.d_hat);
-    e.div_bilinear(&ct.c_hat, &sk.f, &pk.b);
+    e.div(&sk.af, &ct.d_hat);
+    e.div(&ct.c_hat, fb);
     e.div(&[sk.s1], &[ct.e]);
     e.mul(&[sk.s2], &[ct.e_hat]);
     table.find(e.value())

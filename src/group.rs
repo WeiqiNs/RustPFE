@@ -11,6 +11,7 @@ pub type Scalar<E> = <E as Pairing>::ScalarField;
 pub type G1<E> = <E as Pairing>::G1Affine;
 pub type G2<E> = <E as Pairing>::G2Affine;
 pub type Gt<E> = PairingOutput<E>;
+pub type G2Prepared<E> = <E as Pairing>::G2Prepared;
 
 fn must_match(a: usize, b: usize) {
     assert_eq!(a, b, "group: lengths {a} and {b} differ");
@@ -56,12 +57,16 @@ pub fn masked_g2<E: Pairing>(base: &[G2<E>], r: Scalar<E>, m: &[Scalar<E>]) -> V
     masked::<E::G2>(base, r, m)
 }
 
-pub fn pair<E: Pairing>(ps: &[G1<E>], qs: &[G2<E>]) -> Gt<E> {
-    must_match(ps.len(), qs.len());
-    E::multi_pairing(ps.iter().copied(), qs.iter().copied())
+pub fn prepare<E: Pairing>(qs: &[G2<E>]) -> Vec<G2Prepared<E>> {
+    qs.iter().map(|&q| q.into()).collect()
 }
 
-pub fn pair_one<E: Pairing>(p: G1<E>, q: G2<E>) -> Gt<E> {
+pub fn pair<E: Pairing>(ps: &[G1<E>], qs: &[impl Clone + Into<G2Prepared<E>>]) -> Gt<E> {
+    must_match(ps.len(), qs.len());
+    E::multi_pairing(ps.iter().copied(), qs.iter().cloned())
+}
+
+pub fn pair_one<E: Pairing>(p: G1<E>, q: impl Into<G2Prepared<E>>) -> Gt<E> {
     E::pairing(p, q)
 }
 
@@ -71,7 +76,7 @@ pub fn gt_generator<E: Pairing>() -> Gt<E> {
 
 pub struct PairingProduct<E: Pairing> {
     ps: Vec<G1<E>>,
-    qs: Vec<G2<E>>,
+    qs: Vec<G2Prepared<E>>,
 }
 
 impl<E: Pairing> Default for PairingProduct<E> {
@@ -84,13 +89,13 @@ impl<E: Pairing> Default for PairingProduct<E> {
 }
 
 impl<E: Pairing> PairingProduct<E> {
-    pub fn mul(&mut self, ps: &[G1<E>], qs: &[G2<E>]) {
+    pub fn mul(&mut self, ps: &[G1<E>], qs: &[impl Clone + Into<G2Prepared<E>>]) {
         must_match(ps.len(), qs.len());
         self.ps.extend_from_slice(ps);
-        self.qs.extend_from_slice(qs);
+        self.qs.extend(qs.iter().cloned().map(Into::into));
     }
 
-    pub fn div(&mut self, ps: &[G1<E>], qs: &[G2<E>]) {
+    pub fn div(&mut self, ps: &[G1<E>], qs: &[impl Clone + Into<G2Prepared<E>>]) {
         let negated: Vec<G1<E>> = ps.iter().map(|p| -*p).collect();
         self.mul(&negated, qs);
     }
@@ -99,12 +104,8 @@ impl<E: Pairing> PairingProduct<E> {
         self.mul(&combine::<E>(p, f), q);
     }
 
-    pub fn div_bilinear(&mut self, p: &[G1<E>], f: &Matrix<Scalar<E>>, q: &[G2<E>]) {
-        self.div(&combine::<E>(p, f), q);
-    }
-
-    pub fn value(&self) -> Gt<E> {
-        pair::<E>(&self.ps, &self.qs)
+    pub fn value(self) -> Gt<E> {
+        E::multi_pairing(self.ps, self.qs)
     }
 }
 

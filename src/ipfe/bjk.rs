@@ -3,7 +3,8 @@ use ark_std::rand::Rng;
 use ark_std::{UniformRand, Zero};
 
 use crate::group::{
-    G1, G2, Matrix, Scalar, ShapeError, VectorOps, concat, dlog, g1_mul_vec, g2_mul_vec, int_vector, pair,
+    G1, G2, G2Prepared, Matrix, Scalar, ShapeError, VectorOps, concat, dlog, g1_mul_vec, g2_mul_vec, int_vector, pair,
+    prepare,
 };
 
 #[derive(Clone, Debug)]
@@ -70,5 +71,20 @@ pub fn encrypt<E: Pairing, R: Rng + ?Sized>(
 }
 
 pub fn decrypt<E: Pairing>(sk: &Key<E>, ct: &Ciphertext<E>, lo: i64, hi: i64) -> Option<i64> {
-    dlog::<E>(pair::<E>(&ct.r, &sk.r), pair::<E>(&ct.vec, &sk.vec), lo, hi)
+    decrypt_with(&sk.r, &sk.vec, ct, lo, hi)
+}
+
+pub fn decrypt_many<E: Pairing>(sk: &Key<E>, cts: &[Ciphertext<E>], lo: i64, hi: i64) -> Vec<Option<i64>> {
+    let (r, vec) = (prepare::<E>(&sk.r), prepare::<E>(&sk.vec));
+    cts.iter().map(|ct| decrypt_with(&r, &vec, ct, lo, hi)).collect()
+}
+
+fn decrypt_with<E: Pairing, Q: Clone + Into<G2Prepared<E>>>(
+    r: &[Q],
+    vec: &[Q],
+    ct: &Ciphertext<E>,
+    lo: i64,
+    hi: i64,
+) -> Option<i64> {
+    dlog::<E>(pair::<E>(&ct.r, r), pair::<E>(&ct.vec, vec), lo, hi)
 }

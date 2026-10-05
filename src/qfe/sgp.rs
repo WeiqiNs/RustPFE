@@ -3,8 +3,8 @@ use ark_std::UniformRand;
 use ark_std::rand::Rng;
 
 use crate::group::{
-    DlogTable, G1, G2, Gt, Matrix, PairingProduct, Scalar, ShapeError, VectorOps, g1_mul, g1_mul_vec, g2_mul,
-    g2_mul_vec, gt_generator, int_matrix, int_vector, masked_g1, masked_g2, random_vector,
+    DlogTable, G1, G2, G2Prepared, Gt, Matrix, PairingProduct, Scalar, ShapeError, VectorOps, g1_mul, g1_mul_vec,
+    g2_mul, g2_mul_vec, gt_generator, int_matrix, int_vector, masked_g1, masked_g2, random_vector,
 };
 
 #[derive(Clone, Debug)]
@@ -79,8 +79,22 @@ pub fn encrypt<E: Pairing, R: Rng + ?Sized>(
 }
 
 pub fn decrypt<E: Pairing>(table: &DlogTable<E>, sk: &Key<E>, ct: &Ciphertext<E>) -> Option<i64> {
+    decrypt_with(table, sk, &sk.secret, ct)
+}
+
+pub fn decrypt_many<E: Pairing>(table: &DlogTable<E>, sk: &Key<E>, cts: &[Ciphertext<E>]) -> Vec<Option<i64>> {
+    let secret: G2Prepared<E> = sk.secret.into();
+    cts.iter().map(|ct| decrypt_with(table, sk, &secret, ct)).collect()
+}
+
+fn decrypt_with<E: Pairing, Q: Clone + Into<G2Prepared<E>>>(
+    table: &DlogTable<E>,
+    sk: &Key<E>,
+    secret: &Q,
+    ct: &Ciphertext<E>,
+) -> Option<i64> {
     let mut e = PairingProduct::default();
-    e.mul(&[ct.gamma], &[sk.secret]);
+    e.mul(&[ct.gamma], std::slice::from_ref(secret));
     e.mul_bilinear(&ct.a0, &sk.f, &ct.b0);
     e.mul_bilinear(&ct.a1, &sk.f, &ct.b1);
     table.find(e.value())

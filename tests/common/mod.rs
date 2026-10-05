@@ -13,6 +13,11 @@ pub trait InnerProductScheme<E: Pairing> {
     fn keygen(msk: &Self::MasterKey, y: &[i64], rng: &mut impl Rng) -> Result<Self::Key, ShapeError>;
     fn encrypt(msk: &Self::MasterKey, x: &[i64], rng: &mut impl Rng) -> Result<Self::Ciphertext, ShapeError>;
     fn decryptor(msk: &Self::MasterKey, lo: i64, hi: i64) -> impl Fn(&Self::Key, &Self::Ciphertext) -> Option<i64>;
+    fn batch_decryptor(
+        msk: &Self::MasterKey,
+        lo: i64,
+        hi: i64,
+    ) -> impl Fn(&Self::Key, &[Self::Ciphertext]) -> Vec<Option<i64>>;
 }
 
 pub trait QuadraticScheme<E: Pairing> {
@@ -24,11 +29,35 @@ pub trait QuadraticScheme<E: Pairing> {
     fn setup(n: usize, rng: &mut impl Rng) -> (Self::PublicKey, Self::MasterKey);
     fn keygen(msk: &Self::MasterKey, f: &[Vec<i64>], rng: &mut impl Rng) -> Result<Self::Key, ShapeError>;
     fn encrypt(pk: &Self::PublicKey, x: &[i64], y: &[i64], rng: &mut impl Rng) -> Result<Self::Ciphertext, ShapeError>;
-    fn decryptor(pk: &Self::PublicKey, lo: i64, hi: i64) -> impl Fn(&Self::Key, &Self::Ciphertext) -> Option<i64>;
+    fn decryptor(lo: i64, hi: i64) -> impl Fn(&Self::Key, &Self::Ciphertext) -> Option<i64>;
+    fn batch_decryptor(lo: i64, hi: i64) -> impl Fn(&Self::Key, &[Self::Ciphertext]) -> Vec<Option<i64>>;
 }
 
 macro_rules! inner_product_scheme {
-    ($adapter:ident, $name:literal, $module:ident, |$msk:ident, $lo:ident, $hi:ident| $decryptor:expr) => {
+    ($adapter:ident, $name:literal, $module:ident, range) => {
+        inner_product_scheme!(
+            @define $adapter, $name, $module, |_msk, lo, hi|
+            move |k, c| $module::decrypt(k, c, lo, hi),
+            move |k, cs| $module::decrypt_many(k, cs, lo, hi)
+        );
+    };
+    ($adapter:ident, $name:literal, $module:ident, table, |$msk:ident| $base:expr) => {
+        inner_product_scheme!(
+            @define $adapter, $name, $module, |$msk, lo, hi|
+            {
+                let table = DlogTable::new($base, lo, hi);
+                move |k, c| $module::decrypt(&table, k, c)
+            },
+            {
+                let table = DlogTable::new($base, lo, hi);
+                move |k, cs| $module::decrypt_many(&table, k, cs)
+            }
+        );
+    };
+    (
+        @define $adapter:ident, $name:literal, $module:ident,
+        |$msk:ident, $lo:ident, $hi:ident| $one:expr, $many:expr
+    ) => {
         pub struct $adapter;
 
         impl<E: Pairing> InnerProductScheme<E> for $adapter {
@@ -54,34 +83,26 @@ macro_rules! inner_product_scheme {
                 $lo: i64,
                 $hi: i64,
             ) -> impl Fn(&Self::Key, &Self::Ciphertext) -> Option<i64> {
-                $decryptor
+                $one
+            }
+
+            fn batch_decryptor(
+                $msk: &Self::MasterKey,
+                $lo: i64,
+                $hi: i64,
+            ) -> impl Fn(&Self::Key, &[Self::Ciphertext]) -> Vec<Option<i64>> {
+                $many
             }
         }
     };
 }
 
-inner_product_scheme!(Bjk, "Bishop et al.", bjk, |_msk, lo, hi| {
-    move |k, c| bjk::decrypt(k, c, lo, hi)
-});
-inner_product_scheme!(Tao, "Tomida et al.", tao, |msk, lo, hi| {
-    let table = DlogTable::new(msk.base, lo, hi);
-    move |k, c| tao::decrypt(&table, k, c)
-});
-inner_product_scheme!(Kim, "Kim et al.", kim, |_msk, lo, hi| {
-    move |k, c| kim::decrypt(k, c, lo, hi)
-});
-inner_product_scheme!(Lin, "Lin", lin, |_msk, lo, hi| {
-    let table = DlogTable::new(lin::base::<E>(), lo, hi);
-    move |k, c| lin::decrypt(&table, k, c)
-});
-inner_product_scheme!(Kks, "Kim, Kim and Seo", kks, |_msk, lo, hi| {
-    let table = DlogTable::new(kks::base::<E>(), lo, hi);
-    move |k, c| kks::decrypt(&table, k, c)
-});
-inner_product_scheme!(Opt, "Ojaswi et al.", opt, |_msk, lo, hi| {
-    let table = DlogTable::new(opt::base::<E>(), lo, hi);
-    move |k, c| opt::decrypt(&table, k, c)
-});
+inner_product_scheme!(Bjk, "Bishop et al.", bjk, range);
+inner_product_scheme!(Tao, "Tomida et al.", tao, table, |msk| msk.base);
+inner_product_scheme!(Kim, "Kim et al.", kim, range);
+inner_product_scheme!(Lin, "Lin", lin, table, |_msk| lin::base::<E>());
+inner_product_scheme!(Kks, "Kim, Kim and Seo", kks, table, |_msk| kks::base::<E>());
+inner_product_scheme!(Opt, "Ojaswi et al.", opt, table, |_msk| opt::base::<E>());
 
 pub struct Bcfg;
 
@@ -104,10 +125,14 @@ impl<E: Pairing> QuadraticScheme<E> for Bcfg {
         bcfg::encrypt(pk, x, y, rng)
     }
 
-    fn decryptor(pk: &Self::PublicKey, lo: i64, hi: i64) -> impl Fn(&Self::Key, &Self::Ciphertext) -> Option<i64> {
+    fn decryptor(lo: i64, hi: i64) -> impl Fn(&Self::Key, &Self::Ciphertext) -> Option<i64> {
         let table = DlogTable::new(bcfg::base::<E>(), lo, hi);
-        let pk = pk.clone();
-        move |k, c| bcfg::decrypt(&table, &pk, k, c)
+        move |k, c| bcfg::decrypt(&table, k, c)
+    }
+
+    fn batch_decryptor(lo: i64, hi: i64) -> impl Fn(&Self::Key, &[Self::Ciphertext]) -> Vec<Option<i64>> {
+        let table = DlogTable::new(bcfg::base::<E>(), lo, hi);
+        move |k, cs| bcfg::decrypt_many(&table, k, cs)
     }
 }
 
@@ -132,8 +157,13 @@ impl<E: Pairing> QuadraticScheme<E> for Sgp {
         sgp::encrypt(pk, x, y, rng)
     }
 
-    fn decryptor(_pk: &Self::PublicKey, lo: i64, hi: i64) -> impl Fn(&Self::Key, &Self::Ciphertext) -> Option<i64> {
+    fn decryptor(lo: i64, hi: i64) -> impl Fn(&Self::Key, &Self::Ciphertext) -> Option<i64> {
         let table = DlogTable::new(sgp::base::<E>(), lo, hi);
         move |k, c| sgp::decrypt(&table, k, c)
+    }
+
+    fn batch_decryptor(lo: i64, hi: i64) -> impl Fn(&Self::Key, &[Self::Ciphertext]) -> Vec<Option<i64>> {
+        let table = DlogTable::new(sgp::base::<E>(), lo, hi);
+        move |k, cs| sgp::decrypt_many(&table, k, cs)
     }
 }

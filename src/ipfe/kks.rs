@@ -3,8 +3,8 @@ use ark_std::UniformRand;
 use ark_std::rand::Rng;
 
 use crate::group::{
-    DlogTable, G1, G2, Gt, Scalar, ShapeError, VectorOps, concat, g1_mul_vec, g2_mul_vec, gt_generator, int_vector,
-    pair, random_vector, zeros,
+    DlogTable, G1, G2, G2Prepared, Gt, Scalar, ShapeError, VectorOps, concat, g1_mul_vec, g2_mul_vec, gt_generator,
+    int_vector, pair, prepare, random_vector, zeros,
 };
 
 #[derive(Clone, Debug)]
@@ -101,5 +101,18 @@ pub fn encrypt<E: Pairing, R: Rng + ?Sized>(
 }
 
 pub fn decrypt<E: Pairing>(table: &DlogTable<E>, sk: &Key<E>, ct: &Ciphertext<E>) -> Option<i64> {
-    table.find(pair::<E>(&ct.vec, &sk.vec))
+    decrypt_with(table, &sk.vec, ct)
+}
+
+pub fn decrypt_many<E: Pairing>(table: &DlogTable<E>, sk: &Key<E>, cts: &[Ciphertext<E>]) -> Vec<Option<i64>> {
+    let vec = prepare::<E>(&sk.vec);
+    cts.iter().map(|ct| decrypt_with(table, &vec, ct)).collect()
+}
+
+fn decrypt_with<E: Pairing>(
+    table: &DlogTable<E>,
+    vec: &[impl Clone + Into<G2Prepared<E>>],
+    ct: &Ciphertext<E>,
+) -> Option<i64> {
+    table.find(pair::<E>(&ct.vec, vec))
 }

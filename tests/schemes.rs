@@ -9,7 +9,7 @@ use pfe::group::ShapeError;
 fn decrypts_inner_products_exactly_within_the_range<S: InnerProductScheme<E>, E: Pairing>() {
     let rng = &mut ark_std::test_rng();
     let msk = S::setup(4, rng);
-    let decrypt = S::decryptor(&msk, -100, 100);
+    let (decrypt, decrypt_many) = (S::decryptor(&msk, -100, 100), S::batch_decryptor(&msk, -100, 100));
     let sk = S::keygen(&msk, &[1, -2, 3, 4], rng).unwrap();
     let cases: [(&[i64], Option<i64>); 7] = [
         (&[5, 6, 7, 8], Some(46)),
@@ -20,14 +20,12 @@ fn decrypts_inner_products_exactly_within_the_range<S: InnerProductScheme<E>, E:
         (&[1, 0, 0, 25], None),
         (&[-1, 0, 0, -25], None),
     ];
-    for (x, want) in cases {
-        assert_eq!(
-            decrypt(&sk, &S::encrypt(&msk, x, rng).unwrap()),
-            want,
-            "{}: x = {x:?}",
-            S::NAME
-        );
+    let cts: Vec<_> = cases.iter().map(|(x, _)| S::encrypt(&msk, x, rng).unwrap()).collect();
+    for ((x, want), ct) in cases.iter().zip(&cts) {
+        assert_eq!(decrypt(&sk, ct), *want, "{}: x = {x:?}", S::NAME);
     }
+    let wants: Vec<_> = cases.iter().map(|&(_, want)| want).collect();
+    assert_eq!(decrypt_many(&sk, &cts), wants, "{}: decrypt_many", S::NAME);
 }
 
 fn decrypts_one_ciphertext_under_many_keys<S: InnerProductScheme<E>, E: Pairing>() {
@@ -77,7 +75,7 @@ fn quadratic_function() -> Vec<Vec<i64>> {
 fn decrypts_quadratic_forms_exactly_within_the_range<S: QuadraticScheme<E>, E: Pairing>() {
     let rng = &mut ark_std::test_rng();
     let (pk, msk) = S::setup(3, rng);
-    let decrypt = S::decryptor(&pk, -100, 100);
+    let (decrypt, decrypt_many) = (S::decryptor(-100, 100), S::batch_decryptor(-100, 100));
     let sk = S::keygen(&msk, &quadratic_function(), rng).unwrap();
     let cases: [(&[i64], &[i64], Option<i64>); 7] = [
         (&[1, -2, 3], &[4, 5, -6], Some(35)),
@@ -88,20 +86,21 @@ fn decrypts_quadratic_forms_exactly_within_the_range<S: QuadraticScheme<E>, E: P
         (&[1, 0, 0], &[101, 0, 0], None),
         (&[0, 1, 0], &[0, 101, 0], None),
     ];
-    for (x, y, want) in cases {
-        assert_eq!(
-            decrypt(&sk, &S::encrypt(&pk, x, y, rng).unwrap()),
-            want,
-            "{}: x = {x:?}, y = {y:?}",
-            S::NAME
-        );
+    let cts: Vec<_> = cases
+        .iter()
+        .map(|(x, y, _)| S::encrypt(&pk, x, y, rng).unwrap())
+        .collect();
+    for ((x, y, want), ct) in cases.iter().zip(&cts) {
+        assert_eq!(decrypt(&sk, ct), *want, "{}: x = {x:?}, y = {y:?}", S::NAME);
     }
+    let wants: Vec<_> = cases.iter().map(|&(_, _, want)| want).collect();
+    assert_eq!(decrypt_many(&sk, &cts), wants, "{}: decrypt_many", S::NAME);
 }
 
 fn decrypts_one_quadratic_ciphertext_under_many_keys<S: QuadraticScheme<E>, E: Pairing>() {
     let rng = &mut ark_std::test_rng();
     let (pk, msk) = S::setup(3, rng);
-    let decrypt = S::decryptor(&pk, -100, 100);
+    let decrypt = S::decryptor(-100, 100);
     let ct = S::encrypt(&pk, &[1, -2, 3], &[4, 5, -6], rng).unwrap();
     let identity = vec![vec![1, 0, 0], vec![0, 1, 0], vec![0, 0, 1]];
     let corner = vec![vec![0, 0, 0], vec![0, 0, 0], vec![0, 0, 1]];
@@ -118,7 +117,7 @@ fn decrypts_one_quadratic_ciphertext_under_many_keys<S: QuadraticScheme<E>, E: P
 fn handles_quadratic_vectors_of_length_one<S: QuadraticScheme<E>, E: Pairing>() {
     let rng = &mut ark_std::test_rng();
     let (pk, msk) = S::setup(1, rng);
-    let decrypt = S::decryptor(&pk, -100, 100);
+    let decrypt = S::decryptor(-100, 100);
     let ct = S::encrypt(&pk, &[7], &[2], rng).unwrap();
     assert_eq!(
         decrypt(&S::keygen(&msk, &[vec![-3]], rng).unwrap(), &ct),

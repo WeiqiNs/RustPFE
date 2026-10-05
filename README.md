@@ -33,11 +33,12 @@ A key for an n × n matrix F decrypts a ciphertext of (x, y) to xᵀFy. Anyone w
 
 | Scheme | Module | Security | Ciphertext | Key | Reference |
 | --- | --- | --- | :---: | :---: | --- |
-| Baltico et al. | `pfe::qfe::bcfg` | adaptive, generic group model | 2n G1 + (2n + 2) G2 | 2 G1 | [CRYPTO 2017](https://doi.org/10.1007/978-3-319-63688-7_3) |
+| Baltico et al. | `pfe::qfe::bcfg` | adaptive, generic group model | 2n G1 + (2n + 2) G2 | (n + 2) G1 + n G2 | [CRYPTO 2017](https://doi.org/10.1007/978-3-319-63688-7_3) |
 | Dufour-Sans et al. | `pfe::qfe::sgp` | generic group model | (2n + 1) G1 + 2n G2 | 1 G2 | [NeurIPS 2019](https://proceedings.neurips.cc/paper_files/paper/2019/hash/9d28de8ff9bb6a3fa41fddfdc28f3bc1-Abstract.html) |
 
-Both decrypt against a fixed base, and keys also carry F. Dufour-Sans et al.'s scheme appears in the NeurIPS paper by
-Ryffel, Dufour-Sans, Gay, Bach and Pointcheval.
+Both decrypt against a fixed base, and keys also carry F. A Baltico et al. key also carries the products of F with the
+master key that decryption would otherwise derive from the public key. Dufour-Sans et al.'s scheme appears in the
+NeurIPS paper by Ryffel, Dufour-Sans, Gay, Bach and Pointcheval.
 
 ## Usage
 
@@ -71,8 +72,12 @@ let result = sgp::decrypt(&table, &sk, &ct);
 `keygen` and `encrypt` return `Err(ShapeError)` when an input has the wrong length or shape, and `decrypt` returns
 `None` when the result falls outside the searched range. Schemes with a fixed-base `decrypt` take a `DlogTable` built
 once for a range (over `msk.base` for Tomida et al. and `base()` for the others) and reused across decryptions; Bishop
-et al. and Kim et al. derive the base from each key and ciphertext, so their `decrypt` takes the bounds instead. Baltico
-et al.'s `decrypt` also takes the public key. Every randomized function takes the random number generator explicitly.
+et al. and Kim et al. derive the base from each key and ciphertext, so their `decrypt` takes the bounds instead. Every
+randomized function takes the random number generator explicitly.
+
+`decrypt_many` takes the same arguments as `decrypt` but a slice of ciphertexts, and returns one result per
+ciphertext. It prepares the key's G2 elements for pairing once and reuses them, so decrypting many ciphertexts under
+one key costs less per ciphertext than calling `decrypt` for each.
 
 The `group` module wraps arkworks with the operations the schemes need: vectors and matrices over the scalar field,
 fixed-base and multi-scalar multiplication, multi-pairing products and baby-step giant-step discrete logarithms.
@@ -82,46 +87,46 @@ fixed-base and multi-scalar multiplication, multi-pairing products and baby-step
 `benches/schemes.rs` times every scheme on BLS12-381 and BN254 with the same input sizes and bounds as LibPFE's and
 GoPFE's benchmarks, and checks each decryption against the true result before timing it. Run it with `cargo bench`.
 
-The numbers below are milliseconds per operation on BLS12-381, measured with Rust 1.99 and arkworks 0.6 (with its
-x86-64 assembly field arithmetic) on an AMD Ryzen 7 9800X3D. Inputs are random vectors (and matrices) whose results lie
-in [0, 10000]. Fixed-base schemes reuse one discrete-log table, which is excluded from Dec; Bishop et al. and Kim et al.
-search the range on every decryption.
+The numbers below are milliseconds per operation on BLS12-381, measured with Rust 1.99 and arkworks 0.6 on an AMD Ryzen
+7 9800X3D. Inputs are random vectors (and matrices) whose results lie in [0, 10000]. Fixed-base schemes reuse one
+discrete-log table, which is excluded from Dec; Bishop et al. and Kim et al. search the range on every decryption. "Dec,
+reused key" is `decrypt_many` over 10 ciphertexts, divided by 10.
 
 Inner-product FE, n = 10:
 
-| Scheme | Setup | KeyGen | Enc | Dec |
-| --- | ---: | ---: | ---: | ---: |
-| Bishop et al. | 0.59 | 6.18 | 2.76 | 6.92 |
-| Tomida et al. | 1.71 | 4.01 | 1.60 | 5.68 |
-| Kim et al. | 0.07 | 3.02 | 1.32 | 3.82 |
-| Lin | 0.00 | 3.78 | 1.59 | 5.25 |
-| Kim, Kim and Seo | 0.00 | 4.09 | 1.66 | 6.09 |
-| Ojaswi et al. | 0.02 | 4.92 | 2.30 | 3.27 |
+| Scheme | Setup | KeyGen | Enc | Dec | Dec, reused key |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Bishop et al. | 0.59 | 5.83 | 2.64 | 6.64 | 5.03 |
+| Tomida et al. | 1.73 | 3.95 | 1.60 | 5.48 | 3.95 |
+| Kim et al. | 0.07 | 3.10 | 1.32 | 3.82 | 3.06 |
+| Lin | 0.00 | 3.63 | 1.59 | 5.07 | 3.63 |
+| Kim, Kim and Seo | 0.00 | 4.03 | 1.74 | 6.02 | 4.28 |
+| Ojaswi et al. | 0.02 | 5.13 | 2.33 | 3.28 | 2.45 |
 
 Inner-product FE, n = 100:
 
-| Scheme | Setup | KeyGen | Enc | Dec |
-| --- | ---: | ---: | ---: | ---: |
-| Bishop et al. | 304.97 | 16.98 | 6.40 | 43.57 |
-| Tomida et al. | 301.15 | 14.36 | 5.25 | 42.65 |
-| Kim et al. | 37.16 | 9.52 | 3.26 | 22.03 |
-| Lin | 0.01 | 14.71 | 4.85 | 42.35 |
-| Kim, Kim and Seo | 0.01 | 13.89 | 4.73 | 43.00 |
-| Ojaswi et al. | 0.02 | 10.76 | 4.14 | 21.42 |
+| Scheme | Setup | KeyGen | Enc | Dec | Dec, reused key |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Bishop et al. | 303.10 | 16.57 | 6.52 | 43.23 | 30.78 |
+| Tomida et al. | 305.32 | 14.55 | 5.34 | 42.07 | 29.78 |
+| Kim et al. | 35.97 | 9.33 | 3.40 | 21.76 | 15.60 |
+| Lin | 0.01 | 13.70 | 4.82 | 41.50 | 29.51 |
+| Kim, Kim and Seo | 0.02 | 13.97 | 4.74 | 43.94 | 31.11 |
+| Ojaswi et al. | 0.02 | 10.99 | 4.15 | 21.62 | 14.86 |
 
 Quadratic FE, n = 10:
 
-| Scheme | Setup | KeyGen | Enc | Dec |
-| --- | ---: | ---: | ---: | ---: |
-| Baltico et al. | 4.57 | 0.15 | 15.33 | 7.32 |
-| Dufour-Sans et al. | 3.95 | 0.29 | 15.10 | 5.00 |
+| Scheme | Setup | KeyGen | Enc | Dec | Dec, reused key |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Baltico et al. | 4.29 | 4.12 | 14.93 | 6.99 | 6.36 |
+| Dufour-Sans et al. | 3.99 | 0.30 | 14.99 | 5.10 | 5.04 |
 
 Quadratic FE, n = 100:
 
-| Scheme | Setup | KeyGen | Enc | Dec |
-| --- | ---: | ---: | ---: | ---: |
-| Baltico et al. | 12.12 | 0.46 | 85.33 | 69.67 |
-| Dufour-Sans et al. | 11.54 | 0.61 | 88.81 | 45.89 |
+| Scheme | Setup | KeyGen | Enc | Dec | Dec, reused key |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Baltico et al. | 12.16 | 12.17 | 86.76 | 65.55 | 57.87 |
+| Dufour-Sans et al. | 11.62 | 0.62 | 89.14 | 46.37 | 45.96 |
 
 ## Testing
 
