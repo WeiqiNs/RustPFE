@@ -1,8 +1,11 @@
 use ark_bls12_381::{Bls12_381, Fr};
-use ark_std::{One, Zero};
+use ark_bn254::Bn254;
+use ark_ec::pairing::Pairing;
+use ark_ec::{CurveGroup, PrimeGroup};
+use ark_std::{One, UniformRand, Zero};
 use pfe::group::{
-    DlogTable, Gt, Matrix, PairingProduct, ShapeError, VectorOps, g1_mul_vec, g2_mul_vec, gt_generator, int_matrix,
-    masked_g1, masked_g2, msm_g1, pair,
+    DlogTable, Gt, Matrix, PairingProduct, Scalar, ShapeError, VectorOps, g1_mul, g1_mul_vec, g2_mul, g2_mul_vec,
+    gt_generator, int_matrix, masked_g1, masked_g2, msm_g1, pair,
 };
 
 fn matrix(rows: &[[i64; 2]; 2]) -> Matrix<Fr> {
@@ -29,6 +32,19 @@ fn shape_errors_describe_the_mismatch() {
         ShapeError { expected: 3, actual: 2 }.to_string(),
         "input has 2 entries where 3 are needed"
     );
+}
+
+fn assert_generator_multiples<E: Pairing>() {
+    let z = Scalar::<E>::rand(&mut ark_std::test_rng());
+    assert_eq!(g1_mul::<E>(z), (E::G1::generator() * z).into_affine());
+    assert_eq!(g2_mul::<E>(z), (E::G2::generator() * z).into_affine());
+}
+
+#[test]
+fn cached_generator_tables_are_per_curve() {
+    assert_generator_multiples::<Bls12_381>();
+    assert_generator_multiples::<Bn254>();
+    assert_generator_multiples::<Bls12_381>();
 }
 
 #[test]

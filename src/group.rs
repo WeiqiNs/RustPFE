@@ -4,8 +4,13 @@ mod linalg;
 pub use dlog::{DlogTable, dlog};
 pub use linalg::{Matrix, ShapeError, VectorOps, concat, int_matrix, int_vector, random_vector, zeros};
 
+use std::any::{Any, TypeId};
+use std::collections::BTreeMap;
+use std::sync::Mutex;
+
 use ark_ec::pairing::{Pairing, PairingOutput};
-use ark_ec::{CurveGroup, PrimeGroup, ScalarMul, VariableBaseMSM};
+use ark_ec::scalar_mul::BatchMulPreprocessing;
+use ark_ec::{CurveGroup, PrimeGroup, VariableBaseMSM};
 
 pub type Scalar<E> = <E as Pairing>::ScalarField;
 pub type G1<E> = <E as Pairing>::G1Affine;
@@ -17,20 +22,40 @@ fn must_match(a: usize, b: usize) {
     assert_eq!(a, b, "group: lengths {a} and {b} differ");
 }
 
+const SCALARS_FOR_WINDOW_8: usize = 1 << 12;
+
+static GENERATOR_TABLES: Mutex<BTreeMap<TypeId, &'static (dyn Any + Send + Sync)>> = Mutex::new(BTreeMap::new());
+
+fn generator_table<G: CurveGroup>() -> &'static BatchMulPreprocessing<G> {
+    let table = *GENERATOR_TABLES
+        .lock()
+        .expect("group: no thread panics while holding the generator tables")
+        .entry(TypeId::of::<G>())
+        .or_insert_with(|| {
+            Box::leak(Box::new(BatchMulPreprocessing::new(
+                G::generator(),
+                SCALARS_FOR_WINDOW_8,
+            )))
+        });
+    table
+        .downcast_ref()
+        .expect("group: generator tables are keyed by their group's TypeId")
+}
+
 pub fn g1_mul<E: Pairing>(z: Scalar<E>) -> G1<E> {
-    (E::G1::generator() * z).into_affine()
+    g1_mul_vec::<E>(&[z])[0]
 }
 
 pub fn g2_mul<E: Pairing>(z: Scalar<E>) -> G2<E> {
-    (E::G2::generator() * z).into_affine()
+    g2_mul_vec::<E>(&[z])[0]
 }
 
 pub fn g1_mul_vec<E: Pairing>(v: &[Scalar<E>]) -> Vec<G1<E>> {
-    E::G1::generator().batch_mul(v)
+    generator_table::<E::G1>().batch_mul(v)
 }
 
 pub fn g2_mul_vec<E: Pairing>(v: &[Scalar<E>]) -> Vec<G2<E>> {
-    E::G2::generator().batch_mul(v)
+    generator_table::<E::G2>().batch_mul(v)
 }
 
 pub fn scale_g2<E: Pairing>(p: G2<E>, k: Scalar<E>) -> G2<E> {
@@ -44,7 +69,7 @@ pub fn msm_g1<E: Pairing>(points: &[G1<E>], scalars: &[Scalar<E>]) -> G1<E> {
 
 fn masked<G: CurveGroup>(base: &[G::Affine], r: G::ScalarField, m: &[G::ScalarField]) -> Vec<G::Affine> {
     must_match(base.len(), m.len());
-    let encoded = G::generator().batch_mul(m);
+    let encoded = generator_table::<G>().batch_mul(m);
     let sums: Vec<G> = base.iter().zip(&encoded).map(|(p, e)| *p * r + e).collect();
     G::normalize_batch(&sums)
 }

@@ -81,6 +81,8 @@ one key costs less per ciphertext than calling `decrypt` for each.
 
 The `group` module wraps arkworks with the operations the schemes need: vectors and matrices over the scalar field,
 fixed-base and multi-scalar multiplication, multi-pairing products and baby-step giant-step discrete logarithms.
+Fixed-base multiplication reuses one table of generator multiples per curve group, built on first use and kept for the
+life of the process.
 
 ## Benchmarks
 
@@ -96,37 +98,37 @@ Inner-product FE, n = 10:
 
 | Scheme | Setup | KeyGen | Enc | Dec | Dec, reused key |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Bishop et al. | 0.59 | 5.83 | 2.64 | 6.64 | 5.03 |
-| Tomida et al. | 1.73 | 3.95 | 1.60 | 5.48 | 3.95 |
-| Kim et al. | 0.07 | 3.10 | 1.32 | 3.82 | 3.06 |
-| Lin | 0.00 | 3.63 | 1.59 | 5.07 | 3.63 |
-| Kim, Kim and Seo | 0.00 | 4.03 | 1.74 | 6.02 | 4.28 |
-| Ojaswi et al. | 0.02 | 5.13 | 2.33 | 3.28 | 2.45 |
+| Bishop et al. | 0.41 | 0.87 | 0.31 | 6.64 | 5.03 |
+| Tomida et al. | 1.50 | 0.82 | 0.28 | 5.48 | 3.95 |
+| Kim et al. | 0.06 | 0.38 | 0.14 | 3.82 | 3.06 |
+| Lin | 0.00 | 0.72 | 0.25 | 5.07 | 3.63 |
+| Kim, Kim and Seo | 0.00 | 0.91 | 0.31 | 6.02 | 4.28 |
+| Ojaswi et al. | 0.02 | 0.47 | 0.17 | 3.28 | 2.45 |
 
 Inner-product FE, n = 100:
 
 | Scheme | Setup | KeyGen | Enc | Dec | Dec, reused key |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Bishop et al. | 303.10 | 16.57 | 6.52 | 43.23 | 30.78 |
-| Tomida et al. | 305.32 | 14.55 | 5.34 | 42.07 | 29.78 |
-| Kim et al. | 35.97 | 9.33 | 3.40 | 21.76 | 15.60 |
-| Lin | 0.01 | 13.70 | 4.82 | 41.50 | 29.51 |
-| Kim, Kim and Seo | 0.02 | 13.97 | 4.74 | 43.94 | 31.11 |
-| Ojaswi et al. | 0.02 | 10.99 | 4.15 | 21.62 | 14.86 |
+| Bishop et al. | 188.74 | 7.27 | 2.87 | 43.23 | 30.78 |
+| Tomida et al. | 194.93 | 7.16 | 2.75 | 42.07 | 29.78 |
+| Kim et al. | 22.78 | 3.43 | 1.26 | 21.76 | 15.60 |
+| Lin | 0.01 | 6.49 | 2.42 | 41.50 | 29.51 |
+| Kim, Kim and Seo | 0.02 | 6.68 | 2.27 | 43.94 | 31.11 |
+| Ojaswi et al. | 0.02 | 3.36 | 1.15 | 21.62 | 14.86 |
 
 Quadratic FE, n = 10:
 
 | Scheme | Setup | KeyGen | Enc | Dec | Dec, reused key |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Baltico et al. | 4.29 | 4.12 | 14.93 | 6.99 | 6.36 |
-| Dufour-Sans et al. | 3.99 | 0.30 | 14.99 | 5.10 | 5.04 |
+| Baltico et al. | 0.48 | 0.43 | 8.22 | 6.99 | 6.36 |
+| Dufour-Sans et al. | 0.45 | 0.04 | 8.19 | 5.10 | 5.04 |
 
 Quadratic FE, n = 100:
 
 | Scheme | Setup | KeyGen | Enc | Dec | Dec, reused key |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| Baltico et al. | 12.16 | 12.17 | 86.76 | 65.55 | 57.87 |
-| Dufour-Sans et al. | 11.62 | 0.62 | 89.14 | 46.37 | 45.96 |
+| Baltico et al. | 4.35 | 4.81 | 76.53 | 65.55 | 57.87 |
+| Dufour-Sans et al. | 4.32 | 0.34 | 78.22 | 46.37 | 45.96 |
 
 ## Testing
 

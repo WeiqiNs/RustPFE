@@ -159,35 +159,41 @@ impl<F: Field> Matrix<F> {
 
     pub fn invert(&self) -> Option<(Self, F)> {
         let n = self.rows;
-        let mut work: Vec<Vec<F>> = self
-            .data
-            .chunks(n)
-            .enumerate()
-            .map(|(i, row)| {
-                let mut extended = row.to_vec();
-                extended.extend((0..n).map(|j| if i == j { F::one() } else { F::zero() }));
-                extended
-            })
-            .collect();
+        let width = 2 * n;
+        let mut work = zeros(n * width);
+        for (i, (row, source)) in work.chunks_mut(width).zip(self.data.chunks(n)).enumerate() {
+            row[..n].copy_from_slice(source);
+            row[n + i] = F::one();
+        }
+        let mut pivot_row = zeros(width);
         let mut det = F::one();
         for col in 0..n {
-            let pivot = (col..n).find(|&i| !work[i][col].is_zero())?;
+            let pivot = (col..n).find(|&i| !work[i * width + col].is_zero())?;
             if pivot != col {
-                work.swap(pivot, col);
+                let (above, below) = work.split_at_mut(pivot * width);
+                above[col * width..(col + 1) * width].swap_with_slice(&mut below[..width]);
                 det = -det;
             }
-            det *= work[col][col];
-            let scale = work[col][col].inverse()?;
-            work[col] = work[col].scale(scale);
-            for i in 0..n {
-                let factor = work[i][col];
-                if i != col && !factor.is_zero() {
-                    let reduced = work[col].scale(-factor);
-                    work[i] = work[i].plus(&reduced);
+            det *= work[col * width + col];
+            let scale = work[col * width + col].inverse()?;
+            for (p, x) in pivot_row[col..]
+                .iter_mut()
+                .zip(&work[col * width + col..(col + 1) * width])
+            {
+                *p = *x * scale;
+            }
+            for (i, row) in work.chunks_mut(width).enumerate() {
+                if i == col {
+                    row[col..].copy_from_slice(&pivot_row[col..]);
+                    continue;
+                }
+                let factor = row[col];
+                for (x, p) in row[col..].iter_mut().zip(&pivot_row[col..]) {
+                    *x -= factor * p;
                 }
             }
         }
-        let data = work.into_iter().flat_map(|row| row.into_iter().skip(n)).collect();
+        let data = work.chunks(width).flat_map(|row| row[n..].iter().copied()).collect();
         Some((Self { rows: n, cols: n, data }, det))
     }
 }
