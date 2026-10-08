@@ -3,8 +3,8 @@ use ark_std::UniformRand;
 use ark_std::rand::Rng;
 
 use crate::group::{
-    DlogTable, G1, G2, G2Prepared, Gt, Scalar, ShapeError, VectorOps, concat, g1_mul_vec, g2_mul_vec, gt_generator,
-    int_vector, pair, prepare, random_vector, zeros,
+    self, DlogTable, G1, G2, G2Prepared, Gt, Scalar, ShapeError, VectorOps, concat, g1_mul_vec, g2_mul_vec,
+    gt_generator, int_vector, pair, random_vector, zeros,
 };
 
 #[derive(Clone, Debug)]
@@ -22,6 +22,16 @@ pub struct Key<E: Pairing> {
 #[derive(Clone, Debug)]
 pub struct Ciphertext<E: Pairing> {
     pub vec: Vec<G1<E>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct PreparedKey<E: Pairing> {
+    pub vec: Vec<G2Prepared<E>>,
+}
+
+pub trait DecryptionKey<E: Pairing> {
+    type Point: Clone + Into<G2Prepared<E>>;
+    fn side(&self) -> &[Self::Point];
 }
 
 pub fn setup<E: Pairing, R: Rng + ?Sized>(n: usize, rng: &mut R) -> MasterKey<E> {
@@ -62,19 +72,26 @@ pub fn encrypt<E: Pairing, R: Rng + ?Sized>(
     })
 }
 
-pub fn decrypt<E: Pairing>(table: &DlogTable<E>, sk: &Key<E>, ct: &Ciphertext<E>) -> Option<i64> {
-    decrypt_with(table, &sk.vec, ct)
+pub fn prepare<E: Pairing>(sk: &Key<E>) -> PreparedKey<E> {
+    PreparedKey {
+        vec: group::prepare::<E>(&sk.vec),
+    }
 }
 
-pub fn decrypt_many<E: Pairing>(table: &DlogTable<E>, sk: &Key<E>, cts: &[Ciphertext<E>]) -> Vec<Option<i64>> {
-    let vec = prepare::<E>(&sk.vec);
-    cts.iter().map(|ct| decrypt_with(table, &vec, ct)).collect()
+pub fn decrypt<E: Pairing>(table: &DlogTable<E>, sk: &impl DecryptionKey<E>, ct: &Ciphertext<E>) -> Option<i64> {
+    table.find(pair::<E>(&ct.vec, sk.side()))
 }
 
-fn decrypt_with<E: Pairing>(
-    table: &DlogTable<E>,
-    vec: &[impl Clone + Into<G2Prepared<E>>],
-    ct: &Ciphertext<E>,
-) -> Option<i64> {
-    table.find(pair::<E>(&ct.vec, vec))
+impl<E: Pairing> DecryptionKey<E> for Key<E> {
+    type Point = G2<E>;
+    fn side(&self) -> &[G2<E>] {
+        &self.vec
+    }
+}
+
+impl<E: Pairing> DecryptionKey<E> for PreparedKey<E> {
+    type Point = G2Prepared<E>;
+    fn side(&self) -> &[G2Prepared<E>] {
+        &self.vec
+    }
 }

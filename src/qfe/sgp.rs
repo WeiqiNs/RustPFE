@@ -36,6 +36,17 @@ pub struct Ciphertext<E: Pairing> {
     pub b1: Vec<G2<E>>,
 }
 
+#[derive(Clone, Debug)]
+pub struct PreparedKey<E: Pairing> {
+    pub f: Matrix<Scalar<E>>,
+    pub secret: G2Prepared<E>,
+}
+
+pub trait DecryptionKey<E: Pairing> {
+    type Point: Clone + Into<G2Prepared<E>>;
+    fn split(&self) -> (&Matrix<Scalar<E>>, &Self::Point);
+}
+
 pub fn setup<E: Pairing, R: Rng + ?Sized>(n: usize, rng: &mut R) -> (PublicKey<E>, MasterKey<E>) {
     let (s, t): (Vec<Scalar<E>>, Vec<Scalar<E>>) = (random_vector(n, rng), random_vector(n, rng));
     (
@@ -78,24 +89,32 @@ pub fn encrypt<E: Pairing, R: Rng + ?Sized>(
     })
 }
 
-pub fn decrypt<E: Pairing>(table: &DlogTable<E>, sk: &Key<E>, ct: &Ciphertext<E>) -> Option<i64> {
-    decrypt_with(table, sk, &sk.secret, ct)
+pub fn prepare<E: Pairing>(sk: &Key<E>) -> PreparedKey<E> {
+    PreparedKey {
+        f: sk.f.clone(),
+        secret: sk.secret.into(),
+    }
 }
 
-pub fn decrypt_many<E: Pairing>(table: &DlogTable<E>, sk: &Key<E>, cts: &[Ciphertext<E>]) -> Vec<Option<i64>> {
-    let secret: G2Prepared<E> = sk.secret.into();
-    cts.iter().map(|ct| decrypt_with(table, sk, &secret, ct)).collect()
-}
-
-fn decrypt_with<E: Pairing, Q: Clone + Into<G2Prepared<E>>>(
-    table: &DlogTable<E>,
-    sk: &Key<E>,
-    secret: &Q,
-    ct: &Ciphertext<E>,
-) -> Option<i64> {
+pub fn decrypt<E: Pairing>(table: &DlogTable<E>, sk: &impl DecryptionKey<E>, ct: &Ciphertext<E>) -> Option<i64> {
+    let (f, secret) = sk.split();
     let mut e = PairingProduct::default();
     e.mul(&[ct.gamma], std::slice::from_ref(secret));
-    e.mul_bilinear(&ct.a0, &sk.f, &ct.b0);
-    e.mul_bilinear(&ct.a1, &sk.f, &ct.b1);
+    e.mul_bilinear(&ct.a0, f, &ct.b0);
+    e.mul_bilinear(&ct.a1, f, &ct.b1);
     table.find(e.value())
+}
+
+impl<E: Pairing> DecryptionKey<E> for Key<E> {
+    type Point = G2<E>;
+    fn split(&self) -> (&Matrix<Scalar<E>>, &G2<E>) {
+        (&self.f, &self.secret)
+    }
+}
+
+impl<E: Pairing> DecryptionKey<E> for PreparedKey<E> {
+    type Point = G2Prepared<E>;
+    fn split(&self) -> (&Matrix<Scalar<E>>, &G2Prepared<E>) {
+        (&self.f, &self.secret)
+    }
 }

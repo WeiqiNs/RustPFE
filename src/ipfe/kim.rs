@@ -3,8 +3,8 @@ use ark_std::UniformRand;
 use ark_std::rand::Rng;
 
 use crate::group::{
-    G1, G2, G2Prepared, Matrix, Scalar, ShapeError, VectorOps, dlog, g1_mul, g1_mul_vec, g2_mul, g2_mul_vec,
-    int_vector, pair, pair_one, prepare,
+    self, G1, G2, G2Prepared, Matrix, Scalar, ShapeError, VectorOps, dlog, g1_mul, g1_mul_vec, g2_mul, g2_mul_vec,
+    int_vector, pair, pair_one,
 };
 
 #[derive(Clone, Debug)]
@@ -25,6 +25,17 @@ pub struct Key<E: Pairing> {
 pub struct Ciphertext<E: Pairing> {
     pub r: G1<E>,
     pub vec: Vec<G1<E>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct PreparedKey<E: Pairing> {
+    pub r: G2Prepared<E>,
+    pub vec: Vec<G2Prepared<E>>,
+}
+
+pub trait DecryptionKey<E: Pairing> {
+    type Point: Clone + Into<G2Prepared<E>>;
+    fn sides(&self) -> (&Self::Point, &[Self::Point]);
 }
 
 pub fn setup<E: Pairing, R: Rng + ?Sized>(n: usize, rng: &mut R) -> MasterKey<E> {
@@ -63,21 +74,28 @@ pub fn encrypt<E: Pairing, R: Rng + ?Sized>(
     })
 }
 
-pub fn decrypt<E: Pairing>(sk: &Key<E>, ct: &Ciphertext<E>, lo: i64, hi: i64) -> Option<i64> {
-    decrypt_with(&sk.r, &sk.vec, ct, lo, hi)
+pub fn prepare<E: Pairing>(sk: &Key<E>) -> PreparedKey<E> {
+    PreparedKey {
+        r: sk.r.into(),
+        vec: group::prepare::<E>(&sk.vec),
+    }
 }
 
-pub fn decrypt_many<E: Pairing>(sk: &Key<E>, cts: &[Ciphertext<E>], lo: i64, hi: i64) -> Vec<Option<i64>> {
-    let (r, vec): (G2Prepared<E>, _) = (sk.r.into(), prepare::<E>(&sk.vec));
-    cts.iter().map(|ct| decrypt_with(&r, &vec, ct, lo, hi)).collect()
-}
-
-fn decrypt_with<E: Pairing, Q: Clone + Into<G2Prepared<E>>>(
-    r: &Q,
-    vec: &[Q],
-    ct: &Ciphertext<E>,
-    lo: i64,
-    hi: i64,
-) -> Option<i64> {
+pub fn decrypt<E: Pairing>(sk: &impl DecryptionKey<E>, ct: &Ciphertext<E>, lo: i64, hi: i64) -> Option<i64> {
+    let (r, vec) = sk.sides();
     dlog::<E>(pair_one::<E>(ct.r, r.clone()), pair::<E>(&ct.vec, vec), lo, hi)
+}
+
+impl<E: Pairing> DecryptionKey<E> for Key<E> {
+    type Point = G2<E>;
+    fn sides(&self) -> (&G2<E>, &[G2<E>]) {
+        (&self.r, &self.vec)
+    }
+}
+
+impl<E: Pairing> DecryptionKey<E> for PreparedKey<E> {
+    type Point = G2Prepared<E>;
+    fn sides(&self) -> (&G2Prepared<E>, &[G2Prepared<E>]) {
+        (&self.r, &self.vec)
+    }
 }

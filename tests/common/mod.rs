@@ -8,16 +8,18 @@ pub trait InnerProductScheme<E: Pairing> {
     const NAME: &'static str;
     type MasterKey;
     type Key;
+    type PreparedKey;
     type Ciphertext;
     fn setup(n: usize, rng: &mut impl Rng) -> Self::MasterKey;
     fn keygen(msk: &Self::MasterKey, y: &[i64], rng: &mut impl Rng) -> Result<Self::Key, ShapeError>;
     fn encrypt(msk: &Self::MasterKey, x: &[i64], rng: &mut impl Rng) -> Result<Self::Ciphertext, ShapeError>;
+    fn prepare(sk: &Self::Key) -> Self::PreparedKey;
     fn decryptor(msk: &Self::MasterKey, lo: i64, hi: i64) -> impl Fn(&Self::Key, &Self::Ciphertext) -> Option<i64>;
-    fn batch_decryptor(
+    fn prepared_decryptor(
         msk: &Self::MasterKey,
         lo: i64,
         hi: i64,
-    ) -> impl Fn(&Self::Key, &[Self::Ciphertext]) -> Vec<Option<i64>>;
+    ) -> impl Fn(&Self::PreparedKey, &Self::Ciphertext) -> Option<i64>;
 }
 
 pub trait QuadraticScheme<E: Pairing> {
@@ -25,20 +27,21 @@ pub trait QuadraticScheme<E: Pairing> {
     type PublicKey;
     type MasterKey;
     type Key;
+    type PreparedKey;
     type Ciphertext;
     fn setup(n: usize, rng: &mut impl Rng) -> (Self::PublicKey, Self::MasterKey);
     fn keygen(msk: &Self::MasterKey, f: &[Vec<i64>], rng: &mut impl Rng) -> Result<Self::Key, ShapeError>;
     fn encrypt(pk: &Self::PublicKey, x: &[i64], y: &[i64], rng: &mut impl Rng) -> Result<Self::Ciphertext, ShapeError>;
+    fn prepare(sk: &Self::Key) -> Self::PreparedKey;
     fn decryptor(lo: i64, hi: i64) -> impl Fn(&Self::Key, &Self::Ciphertext) -> Option<i64>;
-    fn batch_decryptor(lo: i64, hi: i64) -> impl Fn(&Self::Key, &[Self::Ciphertext]) -> Vec<Option<i64>>;
+    fn prepared_decryptor(lo: i64, hi: i64) -> impl Fn(&Self::PreparedKey, &Self::Ciphertext) -> Option<i64>;
 }
 
 macro_rules! inner_product_scheme {
     ($adapter:ident, $name:literal, $module:ident, range) => {
         inner_product_scheme!(
             @define $adapter, $name, $module, |_msk, lo, hi|
-            move |k, c| $module::decrypt(k, c, lo, hi),
-            move |k, cs| $module::decrypt_many(k, cs, lo, hi)
+            move |k, c| $module::decrypt(k, c, lo, hi)
         );
     };
     ($adapter:ident, $name:literal, $module:ident, table, |$msk:ident| $base:expr) => {
@@ -47,16 +50,12 @@ macro_rules! inner_product_scheme {
             {
                 let table = DlogTable::new($base, lo, hi);
                 move |k, c| $module::decrypt(&table, k, c)
-            },
-            {
-                let table = DlogTable::new($base, lo, hi);
-                move |k, cs| $module::decrypt_many(&table, k, cs)
             }
         );
     };
     (
         @define $adapter:ident, $name:literal, $module:ident,
-        |$msk:ident, $lo:ident, $hi:ident| $one:expr, $many:expr
+        |$msk:ident, $lo:ident, $hi:ident| $decryptor:expr
     ) => {
         pub struct $adapter;
 
@@ -64,6 +63,7 @@ macro_rules! inner_product_scheme {
             const NAME: &'static str = $name;
             type MasterKey = $module::MasterKey<E>;
             type Key = $module::Key<E>;
+            type PreparedKey = $module::PreparedKey<E>;
             type Ciphertext = $module::Ciphertext<E>;
 
             fn setup(n: usize, rng: &mut impl Rng) -> Self::MasterKey {
@@ -78,20 +78,24 @@ macro_rules! inner_product_scheme {
                 $module::encrypt(msk, x, rng)
             }
 
+            fn prepare(sk: &Self::Key) -> Self::PreparedKey {
+                $module::prepare(sk)
+            }
+
             fn decryptor(
                 $msk: &Self::MasterKey,
                 $lo: i64,
                 $hi: i64,
             ) -> impl Fn(&Self::Key, &Self::Ciphertext) -> Option<i64> {
-                $one
+                $decryptor
             }
 
-            fn batch_decryptor(
+            fn prepared_decryptor(
                 $msk: &Self::MasterKey,
                 $lo: i64,
                 $hi: i64,
-            ) -> impl Fn(&Self::Key, &[Self::Ciphertext]) -> Vec<Option<i64>> {
-                $many
+            ) -> impl Fn(&Self::PreparedKey, &Self::Ciphertext) -> Option<i64> {
+                $decryptor
             }
         }
     };
@@ -111,6 +115,7 @@ impl<E: Pairing> QuadraticScheme<E> for Bcfg {
     type PublicKey = bcfg::PublicKey<E>;
     type MasterKey = bcfg::MasterKey<E>;
     type Key = bcfg::Key<E>;
+    type PreparedKey = bcfg::PreparedKey<E>;
     type Ciphertext = bcfg::Ciphertext<E>;
 
     fn setup(n: usize, rng: &mut impl Rng) -> (Self::PublicKey, Self::MasterKey) {
@@ -125,14 +130,18 @@ impl<E: Pairing> QuadraticScheme<E> for Bcfg {
         bcfg::encrypt(pk, x, y, rng)
     }
 
+    fn prepare(sk: &Self::Key) -> Self::PreparedKey {
+        bcfg::prepare(sk)
+    }
+
     fn decryptor(lo: i64, hi: i64) -> impl Fn(&Self::Key, &Self::Ciphertext) -> Option<i64> {
         let table = DlogTable::new(bcfg::base::<E>(), lo, hi);
         move |k, c| bcfg::decrypt(&table, k, c)
     }
 
-    fn batch_decryptor(lo: i64, hi: i64) -> impl Fn(&Self::Key, &[Self::Ciphertext]) -> Vec<Option<i64>> {
+    fn prepared_decryptor(lo: i64, hi: i64) -> impl Fn(&Self::PreparedKey, &Self::Ciphertext) -> Option<i64> {
         let table = DlogTable::new(bcfg::base::<E>(), lo, hi);
-        move |k, cs| bcfg::decrypt_many(&table, k, cs)
+        move |k, c| bcfg::decrypt(&table, k, c)
     }
 }
 
@@ -143,6 +152,7 @@ impl<E: Pairing> QuadraticScheme<E> for Sgp {
     type PublicKey = sgp::PublicKey<E>;
     type MasterKey = sgp::MasterKey<E>;
     type Key = sgp::Key<E>;
+    type PreparedKey = sgp::PreparedKey<E>;
     type Ciphertext = sgp::Ciphertext<E>;
 
     fn setup(n: usize, rng: &mut impl Rng) -> (Self::PublicKey, Self::MasterKey) {
@@ -157,13 +167,17 @@ impl<E: Pairing> QuadraticScheme<E> for Sgp {
         sgp::encrypt(pk, x, y, rng)
     }
 
+    fn prepare(sk: &Self::Key) -> Self::PreparedKey {
+        sgp::prepare(sk)
+    }
+
     fn decryptor(lo: i64, hi: i64) -> impl Fn(&Self::Key, &Self::Ciphertext) -> Option<i64> {
         let table = DlogTable::new(sgp::base::<E>(), lo, hi);
         move |k, c| sgp::decrypt(&table, k, c)
     }
 
-    fn batch_decryptor(lo: i64, hi: i64) -> impl Fn(&Self::Key, &[Self::Ciphertext]) -> Vec<Option<i64>> {
+    fn prepared_decryptor(lo: i64, hi: i64) -> impl Fn(&Self::PreparedKey, &Self::Ciphertext) -> Option<i64> {
         let table = DlogTable::new(sgp::base::<E>(), lo, hi);
-        move |k, cs| sgp::decrypt_many(&table, k, cs)
+        move |k, c| sgp::decrypt(&table, k, c)
     }
 }

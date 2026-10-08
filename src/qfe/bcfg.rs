@@ -3,8 +3,8 @@ use ark_std::UniformRand;
 use ark_std::rand::Rng;
 
 use crate::group::{
-    DlogTable, G1, G2, G2Prepared, Gt, Matrix, PairingProduct, Scalar, ShapeError, VectorOps, g1_mul, g1_mul_vec,
-    g2_mul, g2_mul_vec, gt_generator, int_matrix, int_vector, masked_g1, masked_g2, prepare, random_vector, scale_g2,
+    self, DlogTable, G1, G2, G2Prepared, Gt, Matrix, PairingProduct, Scalar, ShapeError, VectorOps, g1_mul, g1_mul_vec,
+    g2_mul, g2_mul_vec, gt_generator, int_matrix, int_vector, masked_g1, masked_g2, random_vector, scale_g2,
 };
 
 #[derive(Clone, Debug)]
@@ -40,6 +40,17 @@ pub struct Ciphertext<E: Pairing> {
     pub d_hat: Vec<G2<E>>,
     pub e: G2<E>,
     pub e_hat: G2<E>,
+}
+
+#[derive(Clone, Debug)]
+pub struct PreparedKey<E: Pairing> {
+    pub key: Key<E>,
+    pub fb: Vec<G2Prepared<E>>,
+}
+
+pub trait DecryptionKey<E: Pairing> {
+    type Point: Clone + Into<G2Prepared<E>>;
+    fn split(&self) -> (&Key<E>, &[Self::Point]);
 }
 
 pub fn setup<E: Pairing, R: Rng + ?Sized>(n: usize, rng: &mut R) -> (PublicKey<E>, MasterKey<E>) {
@@ -95,26 +106,34 @@ pub fn encrypt<E: Pairing, R: Rng + ?Sized>(
     })
 }
 
-pub fn decrypt<E: Pairing>(table: &DlogTable<E>, sk: &Key<E>, ct: &Ciphertext<E>) -> Option<i64> {
-    decrypt_with(table, sk, &sk.fb, ct)
+pub fn prepare<E: Pairing>(sk: &Key<E>) -> PreparedKey<E> {
+    PreparedKey {
+        key: sk.clone(),
+        fb: group::prepare::<E>(&sk.fb),
+    }
 }
 
-pub fn decrypt_many<E: Pairing>(table: &DlogTable<E>, sk: &Key<E>, cts: &[Ciphertext<E>]) -> Vec<Option<i64>> {
-    let fb = prepare::<E>(&sk.fb);
-    cts.iter().map(|ct| decrypt_with(table, sk, &fb, ct)).collect()
-}
-
-fn decrypt_with<E: Pairing>(
-    table: &DlogTable<E>,
-    sk: &Key<E>,
-    fb: &[impl Clone + Into<G2Prepared<E>>],
-    ct: &Ciphertext<E>,
-) -> Option<i64> {
+pub fn decrypt<E: Pairing>(table: &DlogTable<E>, sk: &impl DecryptionKey<E>, ct: &Ciphertext<E>) -> Option<i64> {
+    let (key, fb) = sk.split();
     let mut e = PairingProduct::default();
-    e.mul_bilinear(&ct.c, &sk.f, &ct.d);
-    e.div(&sk.af, &ct.d_hat);
+    e.mul_bilinear(&ct.c, &key.f, &ct.d);
+    e.div(&key.af, &ct.d_hat);
     e.div(&ct.c_hat, fb);
-    e.div(&[sk.s1], &[ct.e]);
-    e.mul(&[sk.s2], &[ct.e_hat]);
+    e.div(&[key.s1], &[ct.e]);
+    e.mul(&[key.s2], &[ct.e_hat]);
     table.find(e.value())
+}
+
+impl<E: Pairing> DecryptionKey<E> for Key<E> {
+    type Point = G2<E>;
+    fn split(&self) -> (&Key<E>, &[G2<E>]) {
+        (self, &self.fb)
+    }
+}
+
+impl<E: Pairing> DecryptionKey<E> for PreparedKey<E> {
+    type Point = G2Prepared<E>;
+    fn split(&self) -> (&Key<E>, &[G2Prepared<E>]) {
+        (&self.key, &self.fb)
+    }
 }

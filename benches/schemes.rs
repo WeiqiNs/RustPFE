@@ -12,7 +12,6 @@ use pfe::rand::Rng;
 
 const BOUND: i64 = 10_000;
 const LENGTHS: [usize; 2] = [10, 100];
-const BATCH: usize = 10;
 
 fn entries(n: usize, largest: i64, rng: &mut impl Rng) -> Vec<i64> {
     (0..n).map(|_| rng.gen_range(0..=largest)).collect()
@@ -42,21 +41,23 @@ fn inner_product<S: InnerProductScheme<E>, E: Pairing>(c: &mut Criterion, curve:
         let (x, y, want) = inner_product_sample(n, rng);
         let msk = S::setup(n, rng);
         let sk = S::keygen(&msk, &y, rng).unwrap();
-        let cts: Vec<_> = (0..BATCH).map(|_| S::encrypt(&msk, &x, rng).unwrap()).collect();
-        let (decrypt, decrypt_many) = (S::decryptor(&msk, 0, BOUND), S::batch_decryptor(&msk, 0, BOUND));
-        assert_eq!(decrypt(&sk, &cts[0]), Some(want), "{} decrypted wrongly", S::NAME);
+        let ct = S::encrypt(&msk, &x, rng).unwrap();
+        let (decrypt, decrypt_prepared) = (S::decryptor(&msk, 0, BOUND), S::prepared_decryptor(&msk, 0, BOUND));
+        let prepared = S::prepare(&sk);
+        assert_eq!(decrypt(&sk, &ct), Some(want), "{} decrypted wrongly", S::NAME);
         assert_eq!(
-            decrypt_many(&sk, &cts),
-            vec![Some(want); BATCH],
-            "{} decrypted wrongly",
+            decrypt_prepared(&prepared, &ct),
+            Some(want),
+            "{}'s prepared key decrypted wrongly",
             S::NAME
         );
         let mut group = c.benchmark_group(format!("{curve}/inner-product/n={n}/{}", S::NAME));
         group.bench_function("Setup", |b| b.iter(|| S::setup(n, rng)));
         group.bench_function("KeyGen", |b| b.iter(|| S::keygen(&msk, &y, rng)));
         group.bench_function("Enc", |b| b.iter(|| S::encrypt(&msk, &x, rng)));
-        group.bench_function("Dec", |b| b.iter(|| decrypt(&sk, &cts[0])));
-        group.bench_function("DecMany", |b| b.iter(|| decrypt_many(&sk, &cts)));
+        group.bench_function("Dec", |b| b.iter(|| decrypt(&sk, &ct)));
+        group.bench_function("Prepare", |b| b.iter(|| S::prepare(&sk)));
+        group.bench_function("PreparedDec", |b| b.iter(|| decrypt_prepared(&prepared, &ct)));
         group.finish();
     }
 }
@@ -67,21 +68,23 @@ fn quadratic<S: QuadraticScheme<E>, E: Pairing>(c: &mut Criterion, curve: &str) 
         let (x, y, f, want) = quadratic_sample(n, rng);
         let (pk, msk) = S::setup(n, rng);
         let sk = S::keygen(&msk, &f, rng).unwrap();
-        let cts: Vec<_> = (0..BATCH).map(|_| S::encrypt(&pk, &x, &y, rng).unwrap()).collect();
-        let (decrypt, decrypt_many) = (S::decryptor(0, BOUND), S::batch_decryptor(0, BOUND));
-        assert_eq!(decrypt(&sk, &cts[0]), Some(want), "{} decrypted wrongly", S::NAME);
+        let ct = S::encrypt(&pk, &x, &y, rng).unwrap();
+        let (decrypt, decrypt_prepared) = (S::decryptor(0, BOUND), S::prepared_decryptor(0, BOUND));
+        let prepared = S::prepare(&sk);
+        assert_eq!(decrypt(&sk, &ct), Some(want), "{} decrypted wrongly", S::NAME);
         assert_eq!(
-            decrypt_many(&sk, &cts),
-            vec![Some(want); BATCH],
-            "{} decrypted wrongly",
+            decrypt_prepared(&prepared, &ct),
+            Some(want),
+            "{}'s prepared key decrypted wrongly",
             S::NAME
         );
         let mut group = c.benchmark_group(format!("{curve}/quadratic/n={n}/{}", S::NAME));
         group.bench_function("Setup", |b| b.iter(|| S::setup(n, rng)));
         group.bench_function("KeyGen", |b| b.iter(|| S::keygen(&msk, &f, rng)));
         group.bench_function("Enc", |b| b.iter(|| S::encrypt(&pk, &x, &y, rng)));
-        group.bench_function("Dec", |b| b.iter(|| decrypt(&sk, &cts[0])));
-        group.bench_function("DecMany", |b| b.iter(|| decrypt_many(&sk, &cts)));
+        group.bench_function("Dec", |b| b.iter(|| decrypt(&sk, &ct)));
+        group.bench_function("Prepare", |b| b.iter(|| S::prepare(&sk)));
+        group.bench_function("PreparedDec", |b| b.iter(|| decrypt_prepared(&prepared, &ct)));
         group.finish();
     }
 }

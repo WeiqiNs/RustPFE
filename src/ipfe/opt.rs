@@ -2,8 +2,8 @@ use ark_ec::pairing::Pairing;
 use ark_std::rand::Rng;
 
 use crate::group::{
-    DlogTable, G1, G2, G2Prepared, Gt, Matrix, PairingProduct, Scalar, ShapeError, VectorOps, concat, g1_mul_vec,
-    g2_mul_vec, gt_generator, int_vector, prepare, random_vector,
+    self, DlogTable, G1, G2, G2Prepared, Gt, Matrix, PairingProduct, Scalar, ShapeError, VectorOps, concat, g1_mul_vec,
+    g2_mul_vec, gt_generator, int_vector, random_vector,
 };
 
 #[derive(Clone, Debug)]
@@ -24,6 +24,17 @@ pub struct Key<E: Pairing> {
 pub struct Ciphertext<E: Pairing> {
     pub r: Vec<G1<E>>,
     pub vec: Vec<G1<E>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct PreparedKey<E: Pairing> {
+    pub r: Vec<G2Prepared<E>>,
+    pub vec: Vec<G2Prepared<E>>,
+}
+
+pub trait DecryptionKey<E: Pairing> {
+    type Point: Clone + Into<G2Prepared<E>>;
+    fn sides(&self) -> (&[Self::Point], &[Self::Point]);
 }
 
 pub fn setup<E: Pairing, R: Rng + ?Sized>(n: usize, rng: &mut R) -> MasterKey<E> {
@@ -67,23 +78,31 @@ pub fn encrypt<E: Pairing, R: Rng + ?Sized>(
     })
 }
 
-pub fn decrypt<E: Pairing>(table: &DlogTable<E>, sk: &Key<E>, ct: &Ciphertext<E>) -> Option<i64> {
-    decrypt_with(table, &sk.r, &sk.vec, ct)
+pub fn prepare<E: Pairing>(sk: &Key<E>) -> PreparedKey<E> {
+    PreparedKey {
+        r: group::prepare::<E>(&sk.r),
+        vec: group::prepare::<E>(&sk.vec),
+    }
 }
 
-pub fn decrypt_many<E: Pairing>(table: &DlogTable<E>, sk: &Key<E>, cts: &[Ciphertext<E>]) -> Vec<Option<i64>> {
-    let (r, vec) = (prepare::<E>(&sk.r), prepare::<E>(&sk.vec));
-    cts.iter().map(|ct| decrypt_with(table, &r, &vec, ct)).collect()
-}
-
-fn decrypt_with<E: Pairing, Q: Clone + Into<G2Prepared<E>>>(
-    table: &DlogTable<E>,
-    r: &[Q],
-    vec: &[Q],
-    ct: &Ciphertext<E>,
-) -> Option<i64> {
+pub fn decrypt<E: Pairing>(table: &DlogTable<E>, sk: &impl DecryptionKey<E>, ct: &Ciphertext<E>) -> Option<i64> {
+    let (r, vec) = sk.sides();
     let mut e = PairingProduct::default();
     e.mul(&ct.vec, vec);
     e.div(&ct.r, r);
     table.find(e.value())
+}
+
+impl<E: Pairing> DecryptionKey<E> for Key<E> {
+    type Point = G2<E>;
+    fn sides(&self) -> (&[G2<E>], &[G2<E>]) {
+        (&self.r, &self.vec)
+    }
+}
+
+impl<E: Pairing> DecryptionKey<E> for PreparedKey<E> {
+    type Point = G2Prepared<E>;
+    fn sides(&self) -> (&[G2Prepared<E>], &[G2Prepared<E>]) {
+        (&self.r, &self.vec)
+    }
 }
