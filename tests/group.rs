@@ -1,11 +1,12 @@
-use ark_bls12_381::{Bls12_381, Fr};
+use ark_bls12_381::{Bls12_381, Fq, Fq2, Fr, G1Affine, G1Projective, G2Affine};
 use ark_bn254::Bn254;
 use ark_ec::pairing::Pairing;
 use ark_ec::{CurveGroup, PrimeGroup};
 use ark_std::{One, UniformRand, Zero};
 use pfe::group::{
-    DlogTable, Gt, Matrix, PairingProduct, Scalar, ShapeError, VectorOps, g1_mul, g1_mul_vec, g2_mul, g2_mul_vec,
-    gt_generator, int_matrix, masked_g1, masked_g2, msm_g1, pair, random_vector,
+    DecodeError, Decoder, DlogTable, Encoder, Gt, Matrix, PairingProduct, Scalar, ShapeError, VectorOps, decode,
+    g1_mul, g1_mul_vec, g2_mul, g2_mul_vec, gt_generator, int_matrix, masked_g1, masked_g2, msm_g1, pair,
+    random_vector,
 };
 
 fn matrix(rows: &[[i64; 2]; 2]) -> Matrix<Fr> {
@@ -151,4 +152,154 @@ fn pair_rejects_mismatched_lengths() {
         &g1_mul_vec::<Bls12_381>(&[Fr::one()]),
         &g2_mul_vec::<Bls12_381>(&[Fr::one(), Fr::one()]),
     );
+}
+
+fn header(n: u32) -> Vec<u8> {
+    n.to_be_bytes().to_vec()
+}
+
+fn off_subgroup_g1() -> G1Affine {
+    let p = G1Affine::get_point_from_x_unchecked(Fq::zero(), true).unwrap();
+    assert!(p.is_on_curve() && !p.is_in_correct_subgroup_assuming_on_curve());
+    p
+}
+
+fn off_subgroup_g2() -> G2Affine {
+    (1u64..)
+        .filter_map(|k| G2Affine::get_point_from_x_unchecked(Fq2::new(Fq::from(k), Fq::zero()), true))
+        .find(|p| p.is_on_curve() && !p.is_in_correct_subgroup_assuming_on_curve())
+        .unwrap()
+}
+
+#[test]
+fn encoding_round_trips_every_element_kind() {
+    let rng = &mut ark_std::test_rng();
+    let scalar = Fr::from(-1);
+    let v: Vec<Fr> = random_vector(3, rng);
+    let m = Matrix::<Fr>::random(2, 3, rng);
+    let g1 = G1Affine::default();
+    let g1s = g1_mul_vec::<Bls12_381>(&random_vector(5, rng));
+    let g2 = g2_mul::<Bls12_381>(Fr::from(9));
+    let g2s = g2_mul_vec::<Bls12_381>(&random_vector(5, rng));
+    let data = Encoder::new(3)
+        .one(&scalar)
+        .many(&v)
+        .matrix(&m)
+        .one(&g1)
+        .many(&g1s)
+        .one(&g2)
+        .many(&g2s)
+        .bytes();
+    assert_eq!(data.len(), 4 + 32 + 3 * 32 + 6 * 32 + 48 + 5 * 48 + 96 + 5 * 96);
+    let restored = decode::<Bls12_381, _>(&data, |d, n| {
+        Ok((
+            n,
+            d.scalar()?,
+            d.vector(n)?,
+            d.matrix(2, n)?,
+            d.g1()?,
+            d.g1s(5)?,
+            d.g2()?,
+            d.g2s(5)?,
+        ))
+    })
+    .unwrap();
+    assert_eq!(restored, (3, scalar, v, m, g1, g1s, g2, g2s));
+}
+
+#[test]
+fn decode_accepts_well_formed_input_and_rejects_malformed_input() {
+    type Read = fn(&mut Decoder<'_, Bls12_381>, usize) -> Result<(), DecodeError>;
+    let scalar: Read = |d, _| d.scalar().map(|_| ());
+    let g1: Read = |d, _| d.g1().map(|_| ());
+    let square: Read = |d, n| d.matrix(n, n).map(|_| ());
+    let two_by_two: Read = |d, _| d.matrix(2, 2).map(|_| ());
+    let three_g2: Read = |d, _| d.g2s(3).map(|_| ());
+    let valid_g2 = g2_mul::<Bls12_381>(Fr::from(5));
+    let cases = [
+        ("one scalar", Encoder::new(1).one(&Fr::from(7)).bytes(), scalar, Ok(())),
+        ("empty", Vec::new(), scalar, Err(DecodeError::Truncated)),
+        (
+            "zero dimension",
+            header(0),
+            scalar,
+            Err(DecodeError::Shape(ShapeError { expected: 1, actual: 0 })),
+        ),
+        (
+            "dimension beyond the input",
+            [header(1 << 30), vec![0; 64]].concat(),
+            square,
+            Err(DecodeError::Truncated),
+        ),
+        (
+            "matrix beyond the input",
+            Encoder::new(1).one(&Fr::from(7)).bytes(),
+            two_by_two,
+            Err(DecodeError::Truncated),
+        ),
+        (
+            "scalar at or above the order",
+            [header(1), vec![0xff; 32]].concat(),
+            scalar,
+            Err(DecodeError::InvalidScalar),
+        ),
+        (
+            "point with invalid flags",
+            [header(1), vec![0xff; 48]].concat(),
+            g1,
+            Err(DecodeError::InvalidPoint),
+        ),
+        (
+            "x with no point on the curve",
+            {
+                let mut x_is_one = Encoder::new(1).one(&G1Affine::from(G1Projective::generator())).bytes();
+                for byte in &mut x_is_one[5..] {
+                    *byte = 0;
+                }
+                x_is_one[4] &= 0xe0;
+                *x_is_one.last_mut().unwrap() = 1;
+                x_is_one
+            },
+            g1,
+            Err(DecodeError::InvalidPoint),
+        ),
+        (
+            "G1 point outside the subgroup",
+            Encoder::new(1).one(&off_subgroup_g1()).bytes(),
+            g1,
+            Err(DecodeError::InvalidPoint),
+        ),
+        (
+            "G2 point outside the subgroup",
+            Encoder::new(1).many(&[valid_g2, valid_g2, off_subgroup_g2()]).bytes(),
+            three_g2,
+            Err(DecodeError::InvalidPoint),
+        ),
+        (
+            "trailing byte",
+            [Encoder::new(1).one(&Fr::from(7)).bytes(), vec![0]].concat(),
+            scalar,
+            Err(DecodeError::TrailingBytes),
+        ),
+    ];
+    for (name, input, read, want) in cases {
+        assert_eq!(decode(&input, read), want, "{name}");
+    }
+}
+
+#[test]
+fn decode_errors_describe_themselves() {
+    let cases = [
+        (
+            DecodeError::Shape(ShapeError { expected: 1, actual: 0 }),
+            "group: input has 0 entries where 1 are needed",
+        ),
+        (DecodeError::Truncated, "group: encoding is truncated"),
+        (DecodeError::TrailingBytes, "group: encoding has trailing bytes"),
+        (DecodeError::InvalidScalar, "group: encoding holds an invalid scalar"),
+        (DecodeError::InvalidPoint, "group: encoding holds an invalid point"),
+    ];
+    for (error, want) in cases {
+        assert_eq!(error.to_string(), want);
+    }
 }

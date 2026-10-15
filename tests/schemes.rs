@@ -4,7 +4,7 @@ use ark_bls12_381::Bls12_381;
 use ark_bn254::Bn254;
 use ark_ec::pairing::Pairing;
 use common::{Bcfg, Bjk, InnerProductScheme, Kim, Kks, Lin, Opt, QuadraticScheme, Sgp, Tao};
-use pfe::group::ShapeError;
+use pfe::group::{Encoding, ShapeError};
 
 fn decrypt_concurrently<K: Sync, C: Sync>(
     decrypt: &(impl Fn(&K, &C) -> Option<i64> + Sync),
@@ -17,9 +17,16 @@ fn decrypt_concurrently<K: Sync, C: Sync>(
     })
 }
 
+fn round_trip<T: Encoding>(value: &T, name: &str) -> T {
+    let data = value.encode();
+    let restored = T::decode(&data).unwrap();
+    assert_eq!(restored.encode(), data, "{name}");
+    restored
+}
+
 fn decrypts_inner_products_exactly_within_the_range<S: InnerProductScheme<E>, E: Pairing>() {
     let rng = &mut ark_std::test_rng();
-    let msk = S::setup(4, rng);
+    let msk = S::setup(4, rng).unwrap();
     let decrypt = S::decryptor(&msk, -100, 100);
     let decrypt_prepared = S::prepared_decryptor(&msk, -100, 100);
     let sk = S::keygen(&msk, &[1, -2, 3, 4], rng).unwrap();
@@ -46,7 +53,7 @@ fn decrypts_inner_products_exactly_within_the_range<S: InnerProductScheme<E>, E:
 
 fn decrypts_one_ciphertext_under_many_keys<S: InnerProductScheme<E>, E: Pairing>() {
     let rng = &mut ark_std::test_rng();
-    let msk = S::setup(4, rng);
+    let msk = S::setup(4, rng).unwrap();
     let decrypt = S::decryptor(&msk, -100, 100);
     let ct = S::encrypt(&msk, &[5, 6, 7, 8], rng).unwrap();
     let cases: [(&[i64], i64); 3] = [(&[1, -2, 3, 4], 46), (&[0, 0, 0, 1], 8), (&[1, 1, 1, 1], 26)];
@@ -62,7 +69,7 @@ fn decrypts_one_ciphertext_under_many_keys<S: InnerProductScheme<E>, E: Pairing>
 
 fn handles_inner_product_vectors_of_length_one<S: InnerProductScheme<E>, E: Pairing>() {
     let rng = &mut ark_std::test_rng();
-    let msk = S::setup(1, rng);
+    let msk = S::setup(1, rng).unwrap();
     let decrypt = S::decryptor(&msk, -100, 100);
     let value = decrypt(
         &S::keygen(&msk, &[-3], rng).unwrap(),
@@ -73,7 +80,7 @@ fn handles_inner_product_vectors_of_length_one<S: InnerProductScheme<E>, E: Pair
 
 fn rejects_inner_product_vectors_of_the_wrong_length<S: InnerProductScheme<E>, E: Pairing>() {
     let rng = &mut ark_std::test_rng();
-    let msk = S::setup(4, rng);
+    let msk = S::setup(4, rng).unwrap();
     for v in [&[1, 2, 3][..], &[1, 2, 3, 4, 5]] {
         let wrong = Some(ShapeError {
             expected: 4,
@@ -84,13 +91,44 @@ fn rejects_inner_product_vectors_of_the_wrong_length<S: InnerProductScheme<E>, E
     }
 }
 
+fn inner_product_encodings_round_trip_and_decrypt<S: InnerProductScheme<E>, E: Pairing>() {
+    let rng = &mut ark_std::test_rng();
+    let msk = S::setup(4, rng).unwrap();
+    let restored = round_trip(&msk, S::NAME);
+    let sk = round_trip(&S::keygen(&restored, &[1, -2, 3, 4], rng).unwrap(), S::NAME);
+    let ct = round_trip(&S::encrypt(&msk, &[5, 6, 7, 8], rng).unwrap(), S::NAME);
+    let decrypt = S::decryptor(&restored, -100, 100);
+    assert_eq!(decrypt(&sk, &ct), Some(46), "{}", S::NAME);
+
+    let msk = S::setup(1, rng).unwrap();
+    let restored = round_trip(&msk, S::NAME);
+    let sk = round_trip(&S::keygen(&restored, &[-3], rng).unwrap(), S::NAME);
+    let ct = round_trip(&S::encrypt(&msk, &[7], rng).unwrap(), S::NAME);
+    assert_eq!(
+        S::decryptor(&restored, -100, 100)(&sk, &ct),
+        Some(-21),
+        "{}: n = 1",
+        S::NAME
+    );
+}
+
+fn rejects_inner_product_dimensions_below_one<S: InnerProductScheme<E>, E: Pairing>() {
+    let rng = &mut ark_std::test_rng();
+    assert_eq!(
+        S::setup(0, rng).err(),
+        Some(ShapeError { expected: 1, actual: 0 }),
+        "{}",
+        S::NAME
+    );
+}
+
 fn quadratic_function() -> Vec<Vec<i64>> {
     vec![vec![1, 0, 2], vec![0, -1, 0], vec![3, 1, 1]]
 }
 
 fn decrypts_quadratic_forms_exactly_within_the_range<S: QuadraticScheme<E>, E: Pairing>() {
     let rng = &mut ark_std::test_rng();
-    let (pk, msk) = S::setup(3, rng);
+    let (pk, msk) = S::setup(3, rng).unwrap();
     let decrypt = S::decryptor(-100, 100);
     let decrypt_prepared = S::prepared_decryptor(-100, 100);
     let sk = S::keygen(&msk, &quadratic_function(), rng).unwrap();
@@ -120,7 +158,7 @@ fn decrypts_quadratic_forms_exactly_within_the_range<S: QuadraticScheme<E>, E: P
 
 fn decrypts_one_quadratic_ciphertext_under_many_keys<S: QuadraticScheme<E>, E: Pairing>() {
     let rng = &mut ark_std::test_rng();
-    let (pk, msk) = S::setup(3, rng);
+    let (pk, msk) = S::setup(3, rng).unwrap();
     let decrypt = S::decryptor(-100, 100);
     let ct = S::encrypt(&pk, &[1, -2, 3], &[4, 5, -6], rng).unwrap();
     let identity = vec![vec![1, 0, 0], vec![0, 1, 0], vec![0, 0, 1]];
@@ -137,7 +175,7 @@ fn decrypts_one_quadratic_ciphertext_under_many_keys<S: QuadraticScheme<E>, E: P
 
 fn handles_quadratic_vectors_of_length_one<S: QuadraticScheme<E>, E: Pairing>() {
     let rng = &mut ark_std::test_rng();
-    let (pk, msk) = S::setup(1, rng);
+    let (pk, msk) = S::setup(1, rng).unwrap();
     let decrypt = S::decryptor(-100, 100);
     let ct = S::encrypt(&pk, &[7], &[2], rng).unwrap();
     assert_eq!(
@@ -150,7 +188,7 @@ fn handles_quadratic_vectors_of_length_one<S: QuadraticScheme<E>, E: Pairing>() 
 
 fn rejects_quadratic_inputs_of_the_wrong_shape<S: QuadraticScheme<E>, E: Pairing>() {
     let rng = &mut ark_std::test_rng();
-    let (pk, msk) = S::setup(3, rng);
+    let (pk, msk) = S::setup(3, rng).unwrap();
     let short_rows = vec![vec![1, 2], vec![3, 4], vec![5, 6]];
     let few_rows = vec![vec![1, 2, 3], vec![4, 5, 6]];
     assert_eq!(
@@ -169,6 +207,36 @@ fn rejects_quadratic_inputs_of_the_wrong_shape<S: QuadraticScheme<E>, E: Pairing
     let long_y = S::encrypt(&pk, &[1, 2, 3], &[1, 2, 3, 4], rng).err();
     assert_eq!(short_x, Some(ShapeError { expected: 3, actual: 2 }), "{}", S::NAME);
     assert_eq!(long_y, Some(ShapeError { expected: 3, actual: 4 }), "{}", S::NAME);
+}
+
+fn quadratic_encodings_round_trip_and_decrypt<S: QuadraticScheme<E>, E: Pairing>() {
+    let rng = &mut ark_std::test_rng();
+    let (pk, msk) = S::setup(3, rng).unwrap();
+    let restored_pk = round_trip(&pk, S::NAME);
+    let restored_msk = round_trip(&msk, S::NAME);
+    let sk = round_trip(&S::keygen(&restored_msk, &quadratic_function(), rng).unwrap(), S::NAME);
+    let ct = round_trip(
+        &S::encrypt(&restored_pk, &[1, -2, 3], &[4, 5, -6], rng).unwrap(),
+        S::NAME,
+    );
+    assert_eq!(S::decryptor(-100, 100)(&sk, &ct), Some(35), "{}", S::NAME);
+
+    let (pk, msk) = S::setup(1, rng).unwrap();
+    let restored_pk = round_trip(&pk, S::NAME);
+    let restored_msk = round_trip(&msk, S::NAME);
+    let sk = round_trip(&S::keygen(&restored_msk, &[vec![-3]], rng).unwrap(), S::NAME);
+    let ct = round_trip(&S::encrypt(&restored_pk, &[7], &[2], rng).unwrap(), S::NAME);
+    assert_eq!(S::decryptor(-100, 100)(&sk, &ct), Some(-42), "{}: n = 1", S::NAME);
+}
+
+fn rejects_quadratic_dimensions_below_one<S: QuadraticScheme<E>, E: Pairing>() {
+    let rng = &mut ark_std::test_rng();
+    assert_eq!(
+        S::setup(0, rng).err(),
+        Some(ShapeError { expected: 1, actual: 0 }),
+        "{}",
+        S::NAME
+    );
 }
 
 macro_rules! inner_product_tests {
@@ -194,6 +262,16 @@ macro_rules! inner_product_tests {
             #[test]
             fn rejects_vectors_of_the_wrong_length() {
                 super::rejects_inner_product_vectors_of_the_wrong_length::<$scheme, $curve>();
+            }
+
+            #[test]
+            fn rejects_dimensions_below_one() {
+                super::rejects_inner_product_dimensions_below_one::<$scheme, $curve>();
+            }
+
+            #[test]
+            fn encodings_round_trip_and_decrypt() {
+                super::inner_product_encodings_round_trip_and_decrypt::<$scheme, $curve>();
             }
         }
     )*};
@@ -222,6 +300,16 @@ macro_rules! quadratic_tests {
             #[test]
             fn rejects_inputs_of_the_wrong_shape() {
                 super::rejects_quadratic_inputs_of_the_wrong_shape::<$scheme, $curve>();
+            }
+
+            #[test]
+            fn rejects_dimensions_below_one() {
+                super::rejects_quadratic_dimensions_below_one::<$scheme, $curve>();
+            }
+
+            #[test]
+            fn encodings_round_trip_and_decrypt() {
+                super::quadratic_encodings_round_trip_and_decrypt::<$scheme, $curve>();
             }
         }
     )*};

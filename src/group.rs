@@ -1,8 +1,12 @@
 mod dlog;
+mod encoding;
 mod linalg;
 
 pub use dlog::{DlogTable, dlog};
-pub use linalg::{Matrix, ShapeError, VectorOps, concat, int_matrix, int_vector, random_vector, zeros};
+pub use encoding::{DecodeError, Decoder, Encoder, Encoding, decode};
+pub use linalg::{
+    Matrix, ShapeError, VectorOps, check_dimension, concat, int_matrix, int_vector, random_vector, zeros,
+};
 
 use std::any::{Any, TypeId};
 use std::collections::BTreeMap;

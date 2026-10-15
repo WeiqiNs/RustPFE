@@ -1,16 +1,16 @@
 use ark_ec::pairing::Pairing;
-use pfe::group::{DlogTable, ShapeError};
+use pfe::group::{DlogTable, Encoding, ShapeError};
 use pfe::ipfe::{bjk, kim, kks, lin, opt, tao};
 use pfe::qfe::{bcfg, sgp};
 use pfe::rand::Rng;
 
 pub trait InnerProductScheme<E: Pairing> {
     const NAME: &'static str;
-    type MasterKey: Send + Sync;
-    type Key: Send + Sync;
+    type MasterKey: Send + Sync + Encoding;
+    type Key: Send + Sync + Encoding;
     type PreparedKey: Send + Sync;
-    type Ciphertext: Send + Sync;
-    fn setup(n: usize, rng: &mut impl Rng) -> Self::MasterKey;
+    type Ciphertext: Send + Sync + Encoding;
+    fn setup(n: usize, rng: &mut impl Rng) -> Result<Self::MasterKey, ShapeError>;
     fn keygen(msk: &Self::MasterKey, y: &[i64], rng: &mut impl Rng) -> Result<Self::Key, ShapeError>;
     fn encrypt(msk: &Self::MasterKey, x: &[i64], rng: &mut impl Rng) -> Result<Self::Ciphertext, ShapeError>;
     fn prepare(sk: &Self::Key) -> Self::PreparedKey;
@@ -28,12 +28,12 @@ pub trait InnerProductScheme<E: Pairing> {
 
 pub trait QuadraticScheme<E: Pairing> {
     const NAME: &'static str;
-    type PublicKey: Send + Sync;
-    type MasterKey: Send + Sync;
-    type Key: Send + Sync;
+    type PublicKey: Send + Sync + Encoding;
+    type MasterKey: Send + Sync + Encoding;
+    type Key: Send + Sync + Encoding;
     type PreparedKey: Send + Sync;
-    type Ciphertext: Send + Sync;
-    fn setup(n: usize, rng: &mut impl Rng) -> (Self::PublicKey, Self::MasterKey);
+    type Ciphertext: Send + Sync + Encoding;
+    fn setup(n: usize, rng: &mut impl Rng) -> Result<(Self::PublicKey, Self::MasterKey), ShapeError>;
     fn keygen(msk: &Self::MasterKey, f: &[Vec<i64>], rng: &mut impl Rng) -> Result<Self::Key, ShapeError>;
     fn encrypt(pk: &Self::PublicKey, x: &[i64], y: &[i64], rng: &mut impl Rng) -> Result<Self::Ciphertext, ShapeError>;
     fn prepare(sk: &Self::Key) -> Self::PreparedKey;
@@ -73,7 +73,7 @@ macro_rules! inner_product_scheme {
             type PreparedKey = $module::PreparedKey<E>;
             type Ciphertext = $module::Ciphertext<E>;
 
-            fn setup(n: usize, rng: &mut impl Rng) -> Self::MasterKey {
+            fn setup(n: usize, rng: &mut impl Rng) -> Result<Self::MasterKey, ShapeError> {
                 $module::setup(n, rng)
             }
 
@@ -109,7 +109,7 @@ macro_rules! inner_product_scheme {
 }
 
 inner_product_scheme!(Bjk, "Bishop et al.", bjk, range);
-inner_product_scheme!(Tao, "Tomida et al.", tao, table, |msk| msk.base);
+inner_product_scheme!(Tao, "Tomida et al.", tao, table, |msk| msk.base());
 inner_product_scheme!(Kim, "Kim et al.", kim, range);
 inner_product_scheme!(Lin, "Lin", lin, table, |_msk| lin::base::<E>());
 inner_product_scheme!(Kks, "Kim, Kim and Seo", kks, table, |_msk| kks::base::<E>());
@@ -125,7 +125,7 @@ impl<E: Pairing> QuadraticScheme<E> for Bcfg {
     type PreparedKey = bcfg::PreparedKey<E>;
     type Ciphertext = bcfg::Ciphertext<E>;
 
-    fn setup(n: usize, rng: &mut impl Rng) -> (Self::PublicKey, Self::MasterKey) {
+    fn setup(n: usize, rng: &mut impl Rng) -> Result<(Self::PublicKey, Self::MasterKey), ShapeError> {
         bcfg::setup(n, rng)
     }
 
@@ -165,7 +165,7 @@ impl<E: Pairing> QuadraticScheme<E> for Sgp {
     type PreparedKey = sgp::PreparedKey<E>;
     type Ciphertext = sgp::Ciphertext<E>;
 
-    fn setup(n: usize, rng: &mut impl Rng) -> (Self::PublicKey, Self::MasterKey) {
+    fn setup(n: usize, rng: &mut impl Rng) -> Result<(Self::PublicKey, Self::MasterKey), ShapeError> {
         sgp::setup(n, rng)
     }
 

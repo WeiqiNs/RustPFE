@@ -3,31 +3,33 @@ use ark_std::rand::Rng;
 use ark_std::{UniformRand, Zero};
 
 use crate::group::{
-    self, DlogTable, G1, G2, G2Prepared, G2Side, Gt, Matrix, Scalar, ShapeError, VectorOps, concat, g1_mul_vec,
-    g2_mul_vec, gt_generator, int_vector, pair, zeros,
+    self, DecodeError, DlogTable, Encoder, Encoding, G1, G2, G2Prepared, G2Side, Gt, Matrix, Scalar, ShapeError,
+    VectorOps, check_dimension, concat, g1_mul_vec, g2_mul_vec, gt_generator, int_vector, pair, zeros,
 };
 
 #[derive(Clone, Debug)]
 pub struct MasterKey<E: Pairing> {
-    pub n: usize,
-    pub b: Matrix<Scalar<E>>,
-    pub bi: Matrix<Scalar<E>>,
-    pub base: Gt<E>,
+    n: usize,
+    b: Matrix<Scalar<E>>,
+    bi: Matrix<Scalar<E>>,
+    r: Scalar<E>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Key<E: Pairing> {
-    pub vec: Vec<G2<E>>,
+    n: usize,
+    vec: Vec<G2<E>>,
 }
 
 #[derive(Clone, Debug)]
 pub struct Ciphertext<E: Pairing> {
-    pub vec: Vec<G1<E>>,
+    n: usize,
+    vec: Vec<G1<E>>,
 }
 
 #[derive(Clone, Debug)]
 pub struct PreparedKey<E: Pairing> {
-    pub vec: Vec<G2Prepared<E>>,
+    vec: Vec<G2Prepared<E>>,
 }
 
 pub trait DecryptionKey<E: Pairing> {
@@ -35,14 +37,21 @@ pub trait DecryptionKey<E: Pairing> {
     fn side(&self) -> &[Self::Point];
 }
 
-pub fn setup<E: Pairing, R: Rng + ?Sized>(n: usize, rng: &mut R) -> MasterKey<E> {
+pub fn setup<E: Pairing, R: Rng + ?Sized>(n: usize, rng: &mut R) -> Result<MasterKey<E>, ShapeError> {
+    check_dimension(n)?;
     let r = Scalar::<E>::rand(rng);
     let (b, inverse, _) = Matrix::random_invertible(2 * n + 5, rng);
-    MasterKey {
+    Ok(MasterKey {
         n,
         b,
         bi: inverse.scale(r).transpose(),
-        base: gt_generator::<E>() * r,
+        r,
+    })
+}
+
+impl<E: Pairing> MasterKey<E> {
+    pub fn base(&self) -> Gt<E> {
+        gt_generator::<E>() * self.r
     }
 }
 
@@ -55,6 +64,7 @@ pub fn keygen<E: Pairing, R: Rng + ?Sized>(
     let tail = [Scalar::<E>::rand(rng), Scalar::<E>::rand(rng), Scalar::<E>::zero()];
     let encoded = concat(&[&f, &zeros(msk.n + 2), &tail]);
     Ok(Key {
+        n: msk.n,
         vec: g2_mul_vec::<E>(&encoded.mul_mat(&msk.b)),
     })
 }
@@ -69,6 +79,7 @@ pub fn encrypt<E: Pairing, R: Rng + ?Sized>(
     let tail = [Scalar::<E>::rand(rng), Scalar::<E>::rand(rng), zero, zero, zero];
     let encoded = concat(&[&m, &zeros(msk.n), &tail]);
     Ok(Ciphertext {
+        n: msk.n,
         vec: g1_mul_vec::<E>(&encoded.mul_mat(&msk.bi)),
     })
 }
@@ -94,5 +105,57 @@ impl<E: Pairing> DecryptionKey<E> for PreparedKey<E> {
     type Point = G2Prepared<E>;
     fn side(&self) -> &[G2Prepared<E>] {
         &self.vec
+    }
+}
+
+impl<E: Pairing> Encoding for MasterKey<E> {
+    fn encode(&self) -> Vec<u8> {
+        Encoder::new(self.n)
+            .matrix(&self.b)
+            .matrix(&self.bi)
+            .one(&self.r)
+            .bytes()
+    }
+
+    fn decode(data: &[u8]) -> Result<Self, DecodeError> {
+        group::decode::<E, _>(data, |dec, n| {
+            let width = 2 * n + 5;
+            Ok(Self {
+                n,
+                b: dec.matrix(width, width)?,
+                bi: dec.matrix(width, width)?,
+                r: dec.scalar()?,
+            })
+        })
+    }
+}
+
+impl<E: Pairing> Encoding for Key<E> {
+    fn encode(&self) -> Vec<u8> {
+        Encoder::new(self.n).many(&self.vec).bytes()
+    }
+
+    fn decode(data: &[u8]) -> Result<Self, DecodeError> {
+        group::decode::<E, _>(data, |dec, n| {
+            Ok(Self {
+                n,
+                vec: dec.g2s(2 * n + 5)?,
+            })
+        })
+    }
+}
+
+impl<E: Pairing> Encoding for Ciphertext<E> {
+    fn encode(&self) -> Vec<u8> {
+        Encoder::new(self.n).many(&self.vec).bytes()
+    }
+
+    fn decode(data: &[u8]) -> Result<Self, DecodeError> {
+        group::decode::<E, _>(data, |dec, n| {
+            Ok(Self {
+                n,
+                vec: dec.g1s(2 * n + 5)?,
+            })
+        })
     }
 }

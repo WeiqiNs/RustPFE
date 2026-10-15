@@ -49,7 +49,7 @@ fn inner_product<S: InnerProductScheme<E>, E: Pairing>(c: &mut Criterion, curve:
     for n in LENGTHS {
         let rng = &mut ark_std::test_rng();
         let (x, y, want) = inner_product_sample(n, rng);
-        let msk = S::setup(n, rng);
+        let msk = S::setup(n, rng).unwrap();
         let sk = S::keygen(&msk, &y, rng).unwrap();
         let ct = S::encrypt(&msk, &x, rng).unwrap();
         let (decrypt, decrypt_prepared) = (S::decryptor(&msk, 0, BOUND), S::prepared_decryptor(&msk, 0, BOUND));
@@ -80,7 +80,7 @@ fn quadratic<S: QuadraticScheme<E>, E: Pairing>(c: &mut Criterion, curve: &str) 
     for n in LENGTHS {
         let rng = &mut ark_std::test_rng();
         let (x, y, f, want) = quadratic_sample(n, rng);
-        let (pk, msk) = S::setup(n, rng);
+        let (pk, msk) = S::setup(n, rng).unwrap();
         let sk = S::keygen(&msk, &f, rng).unwrap();
         let ct = S::encrypt(&pk, &x, &y, rng).unwrap();
         let (decrypt, decrypt_prepared) = (S::decryptor(0, BOUND), S::prepared_decryptor(0, BOUND));

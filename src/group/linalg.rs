@@ -27,6 +27,13 @@ impl fmt::Display for ShapeError {
 
 impl std::error::Error for ShapeError {}
 
+pub fn check_dimension(n: usize) -> Result<(), ShapeError> {
+    if n == 0 {
+        return Err(ShapeError { expected: 1, actual: n });
+    }
+    Ok(())
+}
+
 pub fn zeros<F: Field>(n: usize) -> Vec<F> {
     vec![F::zero(); n]
 }
@@ -111,6 +118,16 @@ pub struct Matrix<F> {
     rows: usize,
     cols: usize,
     data: Vec<F>,
+}
+
+impl<F> Matrix<F> {
+    pub(crate) fn from_data(rows: usize, cols: usize, data: Vec<F>) -> Self {
+        Self { rows, cols, data }
+    }
+
+    pub(crate) fn data(&self) -> &[F] {
+        &self.data
+    }
 }
 
 impl<F: Field> Matrix<F> {
