@@ -27,9 +27,17 @@ impl fmt::Display for ShapeError {
 
 impl std::error::Error for ShapeError {}
 
+pub const MAX_DIMENSION: usize = u32::MAX as usize;
+
 pub fn check_dimension(n: usize) -> Result<(), ShapeError> {
     if n == 0 {
         return Err(ShapeError { expected: 1, actual: n });
+    }
+    if n > MAX_DIMENSION {
+        return Err(ShapeError {
+            expected: MAX_DIMENSION,
+            actual: n,
+        });
     }
     Ok(())
 }
@@ -135,7 +143,11 @@ impl<F: Field> Matrix<F> {
         Self {
             rows,
             cols,
-            data: random_vector(rows * cols, rng),
+            data: random_vector(
+                rows.checked_mul(cols)
+                    .expect("linalg: a matrix's entry count fits in usize"),
+                rng,
+            ),
         }
     }
 

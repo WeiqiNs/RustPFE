@@ -1,15 +1,15 @@
 use ark_ec::pairing::Pairing;
-use pfe::group::{DlogTable, Encoding, ShapeError};
+use pfe::group::{Dimension, DlogTable, Encoding, ShapeError};
 use pfe::ipfe::{bjk, kim, kks, lin, opt, tao};
 use pfe::qfe::{bcfg, sgp};
 use pfe::rand::Rng;
 
 pub trait InnerProductScheme<E: Pairing> {
     const NAME: &'static str;
-    type MasterKey: Send + Sync + Encoding;
-    type Key: Send + Sync + Encoding;
-    type PreparedKey: Send + Sync;
-    type Ciphertext: Send + Sync + Encoding;
+    type MasterKey: Send + Sync + Encoding + Dimension;
+    type Key: Send + Sync + Encoding + Dimension;
+    type PreparedKey: Send + Sync + Dimension;
+    type Ciphertext: Send + Sync + Encoding + Dimension;
     fn setup(n: usize, rng: &mut impl Rng) -> Result<Self::MasterKey, ShapeError>;
     fn keygen(msk: &Self::MasterKey, y: &[i64], rng: &mut impl Rng) -> Result<Self::Key, ShapeError>;
     fn encrypt(msk: &Self::MasterKey, x: &[i64], rng: &mut impl Rng) -> Result<Self::Ciphertext, ShapeError>;
@@ -28,11 +28,11 @@ pub trait InnerProductScheme<E: Pairing> {
 
 pub trait QuadraticScheme<E: Pairing> {
     const NAME: &'static str;
-    type PublicKey: Send + Sync + Encoding;
-    type MasterKey: Send + Sync + Encoding;
-    type Key: Send + Sync + Encoding;
-    type PreparedKey: Send + Sync;
-    type Ciphertext: Send + Sync + Encoding;
+    type PublicKey: Send + Sync + Encoding + Dimension;
+    type MasterKey: Send + Sync + Encoding + Dimension;
+    type Key: Send + Sync + Encoding + Dimension;
+    type PreparedKey: Send + Sync + Dimension;
+    type Ciphertext: Send + Sync + Encoding + Dimension;
     fn setup(n: usize, rng: &mut impl Rng) -> Result<(Self::PublicKey, Self::MasterKey), ShapeError>;
     fn keygen(msk: &Self::MasterKey, f: &[Vec<i64>], rng: &mut impl Rng) -> Result<Self::Key, ShapeError>;
     fn encrypt(pk: &Self::PublicKey, x: &[i64], y: &[i64], rng: &mut impl Rng) -> Result<Self::Ciphertext, ShapeError>;

@@ -4,7 +4,7 @@ use ark_bls12_381::Bls12_381;
 use ark_bn254::Bn254;
 use ark_ec::pairing::Pairing;
 use common::{Bcfg, Bjk, InnerProductScheme, Kim, Kks, Lin, Opt, QuadraticScheme, Sgp, Tao};
-use pfe::group::{Encoding, ShapeError};
+use pfe::group::{Dimension, Encoding, MAX_DIMENSION, ShapeError};
 
 fn decrypt_concurrently<K: Sync, C: Sync>(
     decrypt: &(impl Fn(&K, &C) -> Option<i64> + Sync),
@@ -31,6 +31,7 @@ fn decrypts_inner_products_exactly_within_the_range<S: InnerProductScheme<E>, E:
     let decrypt_prepared = S::prepared_decryptor(&msk, -100, 100);
     let sk = S::keygen(&msk, &[1, -2, 3, 4], rng).unwrap();
     let prepared = S::prepare(&sk);
+    assert_eq!((sk.n(), prepared.n()), (4, 4), "{}", S::NAME);
     let cases: [(&[i64], Option<i64>); 7] = [
         (&[5, 6, 7, 8], Some(46)),
         (&[-4, 5, -6, 0], Some(-32)),
@@ -97,6 +98,7 @@ fn inner_product_encodings_round_trip_and_decrypt<S: InnerProductScheme<E>, E: P
     let restored = round_trip(&msk, S::NAME);
     let sk = round_trip(&S::keygen(&restored, &[1, -2, 3, 4], rng).unwrap(), S::NAME);
     let ct = round_trip(&S::encrypt(&msk, &[5, 6, 7, 8], rng).unwrap(), S::NAME);
+    assert_eq!((restored.n(), sk.n(), ct.n()), (4, 4, 4), "{}", S::NAME);
     let decrypt = S::decryptor(&restored, -100, 100);
     assert_eq!(decrypt(&sk, &ct), Some(46), "{}", S::NAME);
 
@@ -112,11 +114,20 @@ fn inner_product_encodings_round_trip_and_decrypt<S: InnerProductScheme<E>, E: P
     );
 }
 
-fn rejects_inner_product_dimensions_below_one<S: InnerProductScheme<E>, E: Pairing>() {
+fn rejects_inner_product_dimensions_outside_the_encodable_range<S: InnerProductScheme<E>, E: Pairing>() {
     let rng = &mut ark_std::test_rng();
     assert_eq!(
         S::setup(0, rng).err(),
         Some(ShapeError { expected: 1, actual: 0 }),
+        "{}",
+        S::NAME
+    );
+    assert_eq!(
+        S::setup(MAX_DIMENSION + 1, rng).err(),
+        Some(ShapeError {
+            expected: MAX_DIMENSION,
+            actual: MAX_DIMENSION + 1
+        }),
         "{}",
         S::NAME
     );
@@ -133,6 +144,7 @@ fn decrypts_quadratic_forms_exactly_within_the_range<S: QuadraticScheme<E>, E: P
     let decrypt_prepared = S::prepared_decryptor(-100, 100);
     let sk = S::keygen(&msk, &quadratic_function(), rng).unwrap();
     let prepared = S::prepare(&sk);
+    assert_eq!((sk.n(), prepared.n()), (3, 3), "{}", S::NAME);
     let cases: [(&[i64], &[i64], Option<i64>); 7] = [
         (&[1, -2, 3], &[4, 5, -6], Some(35)),
         (&[-1, 1, 0], &[2, 0, 1], Some(-4)),
@@ -219,6 +231,12 @@ fn quadratic_encodings_round_trip_and_decrypt<S: QuadraticScheme<E>, E: Pairing>
         &S::encrypt(&restored_pk, &[1, -2, 3], &[4, 5, -6], rng).unwrap(),
         S::NAME,
     );
+    assert_eq!(
+        (restored_pk.n(), restored_msk.n(), sk.n(), ct.n()),
+        (3, 3, 3, 3),
+        "{}",
+        S::NAME
+    );
     assert_eq!(S::decryptor(-100, 100)(&sk, &ct), Some(35), "{}", S::NAME);
 
     let (pk, msk) = S::setup(1, rng).unwrap();
@@ -229,11 +247,20 @@ fn quadratic_encodings_round_trip_and_decrypt<S: QuadraticScheme<E>, E: Pairing>
     assert_eq!(S::decryptor(-100, 100)(&sk, &ct), Some(-42), "{}: n = 1", S::NAME);
 }
 
-fn rejects_quadratic_dimensions_below_one<S: QuadraticScheme<E>, E: Pairing>() {
+fn rejects_quadratic_dimensions_outside_the_encodable_range<S: QuadraticScheme<E>, E: Pairing>() {
     let rng = &mut ark_std::test_rng();
     assert_eq!(
         S::setup(0, rng).err(),
         Some(ShapeError { expected: 1, actual: 0 }),
+        "{}",
+        S::NAME
+    );
+    assert_eq!(
+        S::setup(MAX_DIMENSION + 1, rng).err(),
+        Some(ShapeError {
+            expected: MAX_DIMENSION,
+            actual: MAX_DIMENSION + 1
+        }),
         "{}",
         S::NAME
     );
@@ -265,8 +292,8 @@ macro_rules! inner_product_tests {
             }
 
             #[test]
-            fn rejects_dimensions_below_one() {
-                super::rejects_inner_product_dimensions_below_one::<$scheme, $curve>();
+            fn rejects_dimensions_outside_the_encodable_range() {
+                super::rejects_inner_product_dimensions_outside_the_encodable_range::<$scheme, $curve>();
             }
 
             #[test]
@@ -303,8 +330,8 @@ macro_rules! quadratic_tests {
             }
 
             #[test]
-            fn rejects_dimensions_below_one() {
-                super::rejects_quadratic_dimensions_below_one::<$scheme, $curve>();
+            fn rejects_dimensions_outside_the_encodable_range() {
+                super::rejects_quadratic_dimensions_outside_the_encodable_range::<$scheme, $curve>();
             }
 
             #[test]

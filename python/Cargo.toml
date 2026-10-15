@@ -1,0 +1,17 @@
+[package]
+name = "pfe-py"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Python binding of RustPFE on BLS12-381."
+repository = "https://github.com/WeiqiNs/RustPFE"
+publish = false
+
+[lib]
+name = "pfe_py"
+crate-type = ["cdylib"]
+
+[dependencies]
+ark-bls12-381 = "0.6"
+pfe = { path = ".." }
+pyo3 = { version = "0.30", features = ["abi3-py313"] }

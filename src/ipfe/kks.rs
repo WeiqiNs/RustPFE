@@ -3,8 +3,8 @@ use ark_std::UniformRand;
 use ark_std::rand::Rng;
 
 use crate::group::{
-    self, DecodeError, DlogTable, Encoder, Encoding, G1, G2, G2Prepared, G2Side, Gt, Scalar, ShapeError, VectorOps,
-    check_dimension, concat, g1_mul_vec, g2_mul_vec, gt_generator, int_vector, pair, random_vector, zeros,
+    self, DecodeError, Dimension, DlogTable, Encoder, Encoding, G1, G2, G2Prepared, G2Side, Gt, Scalar, ShapeError,
+    VectorOps, check_dimension, concat, g1_mul_vec, g2_mul_vec, gt_generator, int_vector, pair, random_vector, zeros,
 };
 
 #[derive(Clone, Debug)]
@@ -35,6 +35,7 @@ pub struct Ciphertext<E: Pairing> {
 
 #[derive(Clone, Debug)]
 pub struct PreparedKey<E: Pairing> {
+    n: usize,
     vec: Vec<G2Prepared<E>>,
 }
 
@@ -117,6 +118,7 @@ pub fn encrypt<E: Pairing, R: Rng + ?Sized>(
 
 pub fn prepare<E: Pairing>(sk: &Key<E>) -> PreparedKey<E> {
     PreparedKey {
+        n: sk.n,
         vec: group::prepare::<E>(&sk.vec),
     }
 }
@@ -136,6 +138,30 @@ impl<E: Pairing> DecryptionKey<E> for PreparedKey<E> {
     type Point = G2Prepared<E>;
     fn side(&self) -> &[G2Prepared<E>] {
         &self.vec
+    }
+}
+
+impl<E: Pairing> Dimension for MasterKey<E> {
+    fn n(&self) -> usize {
+        self.n
+    }
+}
+
+impl<E: Pairing> Dimension for Key<E> {
+    fn n(&self) -> usize {
+        self.n
+    }
+}
+
+impl<E: Pairing> Dimension for PreparedKey<E> {
+    fn n(&self) -> usize {
+        self.n
+    }
+}
+
+impl<E: Pairing> Dimension for Ciphertext<E> {
+    fn n(&self) -> usize {
+        self.n
     }
 }
 

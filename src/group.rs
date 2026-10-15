@@ -5,7 +5,7 @@ mod linalg;
 pub use dlog::{DlogTable, dlog};
 pub use encoding::{DecodeError, Decoder, Encoder, Encoding, decode};
 pub use linalg::{
-    Matrix, ShapeError, VectorOps, check_dimension, concat, int_matrix, int_vector, random_vector, zeros,
+    MAX_DIMENSION, Matrix, ShapeError, VectorOps, check_dimension, concat, int_matrix, int_vector, random_vector, zeros,
 };
 
 use std::any::{Any, TypeId};
@@ -28,6 +28,10 @@ pub type G2Prepared<E> = <E as Pairing>::G2Prepared;
 pub trait G2Side<E: Pairing>: Clone + Into<G2Prepared<E>> + Sync {}
 
 impl<E: Pairing, T: Clone + Into<G2Prepared<E>> + Sync> G2Side<E> for T {}
+
+pub trait Dimension {
+    fn n(&self) -> usize;
+}
 
 fn must_match(a: usize, b: usize) {
     assert_eq!(a, b, "group: lengths {a} and {b} differ");

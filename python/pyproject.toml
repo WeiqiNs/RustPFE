@@ -1,0 +1,14 @@
+[build-system]
+requires = ["maturin>=1.15,<2"]
+build-backend = "maturin"
+
+[project]
+name = "pfe"
+version = "0.1.0"
+description = "Pairing-based functional encryption on BLS12-381."
+license = "Apache-2.0"
+requires-python = ">=3.13"
+
+[tool.maturin]
+module-name = "pfe"
+features = ["pyo3/extension-module"]
