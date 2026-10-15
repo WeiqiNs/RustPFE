@@ -1,7 +1,13 @@
 use std::fmt;
 
 use ark_ff::Field;
+use ark_std::cfg_chunks_mut;
 use ark_std::rand::Rng;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
+
+const ROWS_PER_TASK: usize = 16;
+const COLUMNS_PER_TASK: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShapeError {
@@ -86,11 +92,16 @@ impl<F: Field> VectorOps<F> for [F] {
             "linalg: a vector-matrix product needs one entry per row"
         );
         let mut r = zeros(m.cols);
-        for (i, vi) in self.iter().enumerate() {
-            for (j, rj) in r.iter_mut().enumerate() {
-                *rj += *vi * m.at(i, j);
-            }
-        }
+        cfg_chunks_mut!(r, COLUMNS_PER_TASK)
+            .enumerate()
+            .for_each(|(block, out)| {
+                let first = block * COLUMNS_PER_TASK;
+                for (vi, row) in self.iter().zip(m.data.chunks(m.cols)) {
+                    for (rj, x) in out.iter_mut().zip(&row[first..]) {
+                        *rj += *vi * x;
+                    }
+                }
+            });
         r
     }
 }
@@ -182,16 +193,20 @@ impl<F: Field> Matrix<F> {
             {
                 *p = *x * scale;
             }
-            for (i, row) in work.chunks_mut(width).enumerate() {
-                if i == col {
-                    row[col..].copy_from_slice(&pivot_row[col..]);
-                    continue;
-                }
-                let factor = row[col];
-                for (x, p) in row[col..].iter_mut().zip(&pivot_row[col..]) {
-                    *x -= factor * p;
-                }
-            }
+            cfg_chunks_mut!(work, width * ROWS_PER_TASK)
+                .enumerate()
+                .for_each(|(block, rows)| {
+                    for (i, row) in (block * ROWS_PER_TASK..).zip(rows.chunks_mut(width)) {
+                        if i == col {
+                            row[col..].copy_from_slice(&pivot_row[col..]);
+                            continue;
+                        }
+                        let factor = row[col];
+                        for (x, p) in row[col..].iter_mut().zip(&pivot_row[col..]) {
+                            *x -= factor * p;
+                        }
+                    }
+                });
         }
         let data = work.chunks(width).flat_map(|row| row[n..].iter().copied()).collect();
         Some((Self { rows: n, cols: n, data }, det))

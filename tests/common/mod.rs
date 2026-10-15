@@ -6,35 +6,42 @@ use pfe::rand::Rng;
 
 pub trait InnerProductScheme<E: Pairing> {
     const NAME: &'static str;
-    type MasterKey;
-    type Key;
-    type PreparedKey;
-    type Ciphertext;
+    type MasterKey: Send + Sync;
+    type Key: Send + Sync;
+    type PreparedKey: Send + Sync;
+    type Ciphertext: Send + Sync;
     fn setup(n: usize, rng: &mut impl Rng) -> Self::MasterKey;
     fn keygen(msk: &Self::MasterKey, y: &[i64], rng: &mut impl Rng) -> Result<Self::Key, ShapeError>;
     fn encrypt(msk: &Self::MasterKey, x: &[i64], rng: &mut impl Rng) -> Result<Self::Ciphertext, ShapeError>;
     fn prepare(sk: &Self::Key) -> Self::PreparedKey;
-    fn decryptor(msk: &Self::MasterKey, lo: i64, hi: i64) -> impl Fn(&Self::Key, &Self::Ciphertext) -> Option<i64>;
+    fn decryptor(
+        msk: &Self::MasterKey,
+        lo: i64,
+        hi: i64,
+    ) -> impl Fn(&Self::Key, &Self::Ciphertext) -> Option<i64> + Send + Sync;
     fn prepared_decryptor(
         msk: &Self::MasterKey,
         lo: i64,
         hi: i64,
-    ) -> impl Fn(&Self::PreparedKey, &Self::Ciphertext) -> Option<i64>;
+    ) -> impl Fn(&Self::PreparedKey, &Self::Ciphertext) -> Option<i64> + Send + Sync;
 }
 
 pub trait QuadraticScheme<E: Pairing> {
     const NAME: &'static str;
-    type PublicKey;
-    type MasterKey;
-    type Key;
-    type PreparedKey;
-    type Ciphertext;
+    type PublicKey: Send + Sync;
+    type MasterKey: Send + Sync;
+    type Key: Send + Sync;
+    type PreparedKey: Send + Sync;
+    type Ciphertext: Send + Sync;
     fn setup(n: usize, rng: &mut impl Rng) -> (Self::PublicKey, Self::MasterKey);
     fn keygen(msk: &Self::MasterKey, f: &[Vec<i64>], rng: &mut impl Rng) -> Result<Self::Key, ShapeError>;
     fn encrypt(pk: &Self::PublicKey, x: &[i64], y: &[i64], rng: &mut impl Rng) -> Result<Self::Ciphertext, ShapeError>;
     fn prepare(sk: &Self::Key) -> Self::PreparedKey;
-    fn decryptor(lo: i64, hi: i64) -> impl Fn(&Self::Key, &Self::Ciphertext) -> Option<i64>;
-    fn prepared_decryptor(lo: i64, hi: i64) -> impl Fn(&Self::PreparedKey, &Self::Ciphertext) -> Option<i64>;
+    fn decryptor(lo: i64, hi: i64) -> impl Fn(&Self::Key, &Self::Ciphertext) -> Option<i64> + Send + Sync;
+    fn prepared_decryptor(
+        lo: i64,
+        hi: i64,
+    ) -> impl Fn(&Self::PreparedKey, &Self::Ciphertext) -> Option<i64> + Send + Sync;
 }
 
 macro_rules! inner_product_scheme {
@@ -86,7 +93,7 @@ macro_rules! inner_product_scheme {
                 $msk: &Self::MasterKey,
                 $lo: i64,
                 $hi: i64,
-            ) -> impl Fn(&Self::Key, &Self::Ciphertext) -> Option<i64> {
+            ) -> impl Fn(&Self::Key, &Self::Ciphertext) -> Option<i64> + Send + Sync {
                 $decryptor
             }
 
@@ -94,7 +101,7 @@ macro_rules! inner_product_scheme {
                 $msk: &Self::MasterKey,
                 $lo: i64,
                 $hi: i64,
-            ) -> impl Fn(&Self::PreparedKey, &Self::Ciphertext) -> Option<i64> {
+            ) -> impl Fn(&Self::PreparedKey, &Self::Ciphertext) -> Option<i64> + Send + Sync {
                 $decryptor
             }
         }
@@ -134,12 +141,15 @@ impl<E: Pairing> QuadraticScheme<E> for Bcfg {
         bcfg::prepare(sk)
     }
 
-    fn decryptor(lo: i64, hi: i64) -> impl Fn(&Self::Key, &Self::Ciphertext) -> Option<i64> {
+    fn decryptor(lo: i64, hi: i64) -> impl Fn(&Self::Key, &Self::Ciphertext) -> Option<i64> + Send + Sync {
         let table = DlogTable::new(bcfg::base::<E>(), lo, hi);
         move |k, c| bcfg::decrypt(&table, k, c)
     }
 
-    fn prepared_decryptor(lo: i64, hi: i64) -> impl Fn(&Self::PreparedKey, &Self::Ciphertext) -> Option<i64> {
+    fn prepared_decryptor(
+        lo: i64,
+        hi: i64,
+    ) -> impl Fn(&Self::PreparedKey, &Self::Ciphertext) -> Option<i64> + Send + Sync {
         let table = DlogTable::new(bcfg::base::<E>(), lo, hi);
         move |k, c| bcfg::decrypt(&table, k, c)
     }
@@ -171,12 +181,15 @@ impl<E: Pairing> QuadraticScheme<E> for Sgp {
         sgp::prepare(sk)
     }
 
-    fn decryptor(lo: i64, hi: i64) -> impl Fn(&Self::Key, &Self::Ciphertext) -> Option<i64> {
+    fn decryptor(lo: i64, hi: i64) -> impl Fn(&Self::Key, &Self::Ciphertext) -> Option<i64> + Send + Sync {
         let table = DlogTable::new(sgp::base::<E>(), lo, hi);
         move |k, c| sgp::decrypt(&table, k, c)
     }
 
-    fn prepared_decryptor(lo: i64, hi: i64) -> impl Fn(&Self::PreparedKey, &Self::Ciphertext) -> Option<i64> {
+    fn prepared_decryptor(
+        lo: i64,
+        hi: i64,
+    ) -> impl Fn(&Self::PreparedKey, &Self::Ciphertext) -> Option<i64> + Send + Sync {
         let table = DlogTable::new(sgp::base::<E>(), lo, hi);
         move |k, c| sgp::decrypt(&table, k, c)
     }

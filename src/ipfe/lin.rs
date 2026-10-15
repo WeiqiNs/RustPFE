@@ -3,7 +3,7 @@ use ark_std::UniformRand;
 use ark_std::rand::Rng;
 
 use crate::group::{
-    self, DlogTable, G1, G2, G2Prepared, Gt, Scalar, ShapeError, VectorOps, concat, g1_mul_vec, g2_mul_vec,
+    self, DlogTable, G1, G2, G2Prepared, G2Side, Gt, Scalar, ShapeError, VectorOps, concat, g1_mul_vec, g2_mul_vec,
     gt_generator, int_vector, pair, random_vector, zeros,
 };
 
@@ -30,7 +30,7 @@ pub struct PreparedKey<E: Pairing> {
 }
 
 pub trait DecryptionKey<E: Pairing> {
-    type Point: Clone + Into<G2Prepared<E>>;
+    type Point: G2Side<E>;
     fn side(&self) -> &[Self::Point];
 }
 

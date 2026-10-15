@@ -45,6 +45,12 @@ jobs:
       - name: Lint
         run: cargo clippy --all-targets -- -D warnings
 
+      - name: Lint without the parallel feature
+        run: cargo clippy --all-targets --no-default-features -- -D warnings
+
+      - name: Test without the parallel feature
+        run: cargo test --no-default-features
+
       - name: Run tests with coverage
         run: cargo llvm-cov --tests --ignore-filename-regex '(tests|benches)/' --lcov --output-path lcov.info
 

@@ -6,6 +6,17 @@ use ark_ec::pairing::Pairing;
 use common::{Bcfg, Bjk, InnerProductScheme, Kim, Kks, Lin, Opt, QuadraticScheme, Sgp, Tao};
 use pfe::group::ShapeError;
 
+fn decrypt_concurrently<K: Sync, C: Sync>(
+    decrypt: &(impl Fn(&K, &C) -> Option<i64> + Sync),
+    key: &K,
+    cts: &[C],
+) -> Vec<Option<i64>> {
+    std::thread::scope(|scope| {
+        let threads: Vec<_> = cts.iter().map(|ct| scope.spawn(move || decrypt(key, ct))).collect();
+        threads.into_iter().map(|thread| thread.join().unwrap()).collect()
+    })
+}
+
 fn decrypts_inner_products_exactly_within_the_range<S: InnerProductScheme<E>, E: Pairing>() {
     let rng = &mut ark_std::test_rng();
     let msk = S::setup(4, rng);
@@ -22,16 +33,15 @@ fn decrypts_inner_products_exactly_within_the_range<S: InnerProductScheme<E>, E:
         (&[1, 0, 0, 25], None),
         (&[-1, 0, 0, -25], None),
     ];
-    for (x, want) in cases {
-        let ct = S::encrypt(&msk, x, rng).unwrap();
-        assert_eq!(decrypt(&sk, &ct), want, "{}: x = {x:?}", S::NAME);
-        assert_eq!(
-            decrypt_prepared(&prepared, &ct),
-            want,
-            "{}: prepared, x = {x:?}",
-            S::NAME
-        );
-    }
+    let cts: Vec<_> = cases.iter().map(|(x, _)| S::encrypt(&msk, x, rng).unwrap()).collect();
+    let want: Vec<_> = cases.iter().map(|(_, want)| *want).collect();
+    assert_eq!(decrypt_concurrently(&decrypt, &sk, &cts), want, "{}", S::NAME);
+    assert_eq!(
+        decrypt_concurrently(&decrypt_prepared, &prepared, &cts),
+        want,
+        "{}: prepared",
+        S::NAME
+    );
 }
 
 fn decrypts_one_ciphertext_under_many_keys<S: InnerProductScheme<E>, E: Pairing>() {
@@ -94,16 +104,18 @@ fn decrypts_quadratic_forms_exactly_within_the_range<S: QuadraticScheme<E>, E: P
         (&[1, 0, 0], &[101, 0, 0], None),
         (&[0, 1, 0], &[0, 101, 0], None),
     ];
-    for (x, y, want) in cases {
-        let ct = S::encrypt(&pk, x, y, rng).unwrap();
-        assert_eq!(decrypt(&sk, &ct), want, "{}: x = {x:?}, y = {y:?}", S::NAME);
-        assert_eq!(
-            decrypt_prepared(&prepared, &ct),
-            want,
-            "{}: prepared, x = {x:?}, y = {y:?}",
-            S::NAME
-        );
-    }
+    let cts: Vec<_> = cases
+        .iter()
+        .map(|(x, y, _)| S::encrypt(&pk, x, y, rng).unwrap())
+        .collect();
+    let want: Vec<_> = cases.iter().map(|(_, _, want)| *want).collect();
+    assert_eq!(decrypt_concurrently(&decrypt, &sk, &cts), want, "{}", S::NAME);
+    assert_eq!(
+        decrypt_concurrently(&decrypt_prepared, &prepared, &cts),
+        want,
+        "{}: prepared",
+        S::NAME
+    );
 }
 
 fn decrypts_one_quadratic_ciphertext_under_many_keys<S: QuadraticScheme<E>, E: Pairing>() {

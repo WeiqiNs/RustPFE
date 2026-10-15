@@ -5,7 +5,7 @@ use ark_ec::{CurveGroup, PrimeGroup};
 use ark_std::{One, UniformRand, Zero};
 use pfe::group::{
     DlogTable, Gt, Matrix, PairingProduct, Scalar, ShapeError, VectorOps, g1_mul, g1_mul_vec, g2_mul, g2_mul_vec,
-    gt_generator, int_matrix, masked_g1, masked_g2, msm_g1, pair,
+    gt_generator, int_matrix, masked_g1, masked_g2, msm_g1, pair, random_vector,
 };
 
 fn matrix(rows: &[[i64; 2]; 2]) -> Matrix<Fr> {
@@ -19,6 +19,16 @@ fn invert_swaps_zero_pivots_and_tracks_the_determinant() {
     assert_eq!(det, Fr::from(-6));
     let v = [Fr::from(5), Fr::from(7)];
     assert_eq!(inverse.mul_vec(&m.mul_vec(&v)), v);
+}
+
+#[test]
+fn invert_and_products_hold_for_matrices_split_into_tasks() {
+    let rng = &mut ark_std::test_rng();
+    let m = Matrix::<Fr>::random(40, 40, rng);
+    let (inverse, _) = m.invert().unwrap();
+    let v: Vec<Fr> = random_vector(40, rng);
+    assert_eq!(inverse.mul_vec(&m.mul_vec(&v)), v);
+    assert_eq!(v.mul_mat(&m), m.transpose().mul_vec(&v));
 }
 
 #[test]

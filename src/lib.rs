@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 pub mod group;
 pub mod ipfe;
 pub mod qfe;

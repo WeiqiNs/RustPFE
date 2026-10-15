@@ -6,17 +6,24 @@ pub use linalg::{Matrix, ShapeError, VectorOps, concat, int_matrix, int_vector, 
 
 use std::any::{Any, TypeId};
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 use ark_ec::pairing::{Pairing, PairingOutput};
 use ark_ec::scalar_mul::BatchMulPreprocessing;
 use ark_ec::{CurveGroup, PrimeGroup, VariableBaseMSM};
+use ark_std::cfg_iter;
+#[cfg(feature = "parallel")]
+use rayon::prelude::*;
 
 pub type Scalar<E> = <E as Pairing>::ScalarField;
 pub type G1<E> = <E as Pairing>::G1Affine;
 pub type G2<E> = <E as Pairing>::G2Affine;
 pub type Gt<E> = PairingOutput<E>;
 pub type G2Prepared<E> = <E as Pairing>::G2Prepared;
+
+pub trait G2Side<E: Pairing>: Clone + Into<G2Prepared<E>> + Sync {}
+
+impl<E: Pairing, T: Clone + Into<G2Prepared<E>> + Sync> G2Side<E> for T {}
 
 fn must_match(a: usize, b: usize) {
     assert_eq!(a, b, "group: lengths {a} and {b} differ");
@@ -26,17 +33,22 @@ const SCALARS_FOR_WINDOW_8: usize = 1 << 12;
 
 static GENERATOR_TABLES: Mutex<BTreeMap<TypeId, &'static (dyn Any + Send + Sync)>> = Mutex::new(BTreeMap::new());
 
-fn generator_table<G: CurveGroup>() -> &'static BatchMulPreprocessing<G> {
-    let table = *GENERATOR_TABLES
+fn generator_tables() -> MutexGuard<'static, BTreeMap<TypeId, &'static (dyn Any + Send + Sync)>> {
+    GENERATOR_TABLES
         .lock()
         .expect("group: no thread panics while holding the generator tables")
-        .entry(TypeId::of::<G>())
-        .or_insert_with(|| {
-            Box::leak(Box::new(BatchMulPreprocessing::new(
-                G::generator(),
-                SCALARS_FOR_WINDOW_8,
-            )))
-        });
+}
+
+fn generator_table<G: CurveGroup>() -> &'static BatchMulPreprocessing<G> {
+    let key = TypeId::of::<G>();
+    let existing = generator_tables().get(&key).copied();
+    let table = match existing {
+        Some(table) => table,
+        None => {
+            let built = Box::new(BatchMulPreprocessing::new(G::generator(), SCALARS_FOR_WINDOW_8));
+            *generator_tables().entry(key).or_insert_with(|| Box::leak(built))
+        }
+    };
     table
         .downcast_ref()
         .expect("group: generator tables are keyed by their group's TypeId")
@@ -70,7 +82,7 @@ pub fn msm_g1<E: Pairing>(points: &[G1<E>], scalars: &[Scalar<E>]) -> G1<E> {
 fn masked<G: CurveGroup>(base: &[G::Affine], r: G::ScalarField, m: &[G::ScalarField]) -> Vec<G::Affine> {
     must_match(base.len(), m.len());
     let encoded = generator_table::<G>().batch_mul(m);
-    let sums: Vec<G> = base.iter().zip(&encoded).map(|(p, e)| *p * r + e).collect();
+    let sums: Vec<G> = cfg_iter!(base).zip(&encoded).map(|(p, e)| *p * r + e).collect();
     G::normalize_batch(&sums)
 }
 
@@ -82,13 +94,13 @@ pub fn masked_g2<E: Pairing>(base: &[G2<E>], r: Scalar<E>, m: &[Scalar<E>]) -> V
     masked::<E::G2>(base, r, m)
 }
 
-pub fn prepare<E: Pairing>(qs: &[G2<E>]) -> Vec<G2Prepared<E>> {
-    qs.iter().map(|&q| q.into()).collect()
+pub fn prepare<E: Pairing>(qs: &[impl G2Side<E>]) -> Vec<G2Prepared<E>> {
+    cfg_iter!(qs).map(|q| q.clone().into()).collect()
 }
 
-pub fn pair<E: Pairing>(ps: &[G1<E>], qs: &[impl Clone + Into<G2Prepared<E>>]) -> Gt<E> {
+pub fn pair<E: Pairing>(ps: &[G1<E>], qs: &[impl G2Side<E>]) -> Gt<E> {
     must_match(ps.len(), qs.len());
-    E::multi_pairing(ps.iter().copied(), qs.iter().cloned())
+    E::multi_pairing(ps.iter().copied(), prepare::<E>(qs))
 }
 
 pub fn pair_one<E: Pairing>(p: G1<E>, q: impl Into<G2Prepared<E>>) -> Gt<E> {
@@ -114,13 +126,13 @@ impl<E: Pairing> Default for PairingProduct<E> {
 }
 
 impl<E: Pairing> PairingProduct<E> {
-    pub fn mul(&mut self, ps: &[G1<E>], qs: &[impl Clone + Into<G2Prepared<E>>]) {
+    pub fn mul(&mut self, ps: &[G1<E>], qs: &[impl G2Side<E>]) {
         must_match(ps.len(), qs.len());
         self.ps.extend_from_slice(ps);
-        self.qs.extend(qs.iter().cloned().map(Into::into));
+        self.qs.extend(prepare::<E>(qs));
     }
 
-    pub fn div(&mut self, ps: &[G1<E>], qs: &[impl Clone + Into<G2Prepared<E>>]) {
+    pub fn div(&mut self, ps: &[G1<E>], qs: &[impl G2Side<E>]) {
         let negated: Vec<G1<E>> = ps.iter().map(|p| -*p).collect();
         self.mul(&negated, qs);
     }

@@ -3,8 +3,8 @@ use ark_std::UniformRand;
 use ark_std::rand::Rng;
 
 use crate::group::{
-    DlogTable, G1, G2, G2Prepared, Gt, Matrix, PairingProduct, Scalar, ShapeError, VectorOps, g1_mul, g1_mul_vec,
-    g2_mul, g2_mul_vec, gt_generator, int_matrix, int_vector, masked_g1, masked_g2, random_vector,
+    DlogTable, G1, G2, G2Prepared, G2Side, Gt, Matrix, PairingProduct, Scalar, ShapeError, VectorOps, g1_mul,
+    g1_mul_vec, g2_mul, g2_mul_vec, gt_generator, int_matrix, int_vector, masked_g1, masked_g2, random_vector,
 };
 
 #[derive(Clone, Debug)]
@@ -43,7 +43,7 @@ pub struct PreparedKey<E: Pairing> {
 }
 
 pub trait DecryptionKey<E: Pairing> {
-    type Point: Clone + Into<G2Prepared<E>>;
+    type Point: G2Side<E>;
     fn split(&self) -> (&Matrix<Scalar<E>>, &Self::Point);
 }
 

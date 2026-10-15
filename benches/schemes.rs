@@ -1,14 +1,16 @@
 #[path = "../tests/common/mod.rs"]
 mod common;
 
-use std::time::Duration;
+use std::hint::black_box;
+use std::time::{Duration, Instant};
 
 use ark_bls12_381::Bls12_381;
 use ark_bn254::Bn254;
 use ark_ec::pairing::Pairing;
 use common::{Bcfg, Bjk, InnerProductScheme, Kim, Kks, Lin, Opt, QuadraticScheme, Sgp, Tao};
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use pfe::rand::Rng;
+use rayon::prelude::*;
 
 const BOUND: i64 = 10_000;
 const LENGTHS: [usize; 2] = [10, 100];
@@ -35,6 +37,14 @@ fn quadratic_sample(n: usize, rng: &mut impl Rng) -> (Vec<i64>, Vec<i64>, Vec<Ve
     (x, y, f, value)
 }
 
+fn on_every_thread<T>(iters: u64, op: impl Fn() -> T + Sync) -> Duration {
+    let start = Instant::now();
+    (0..iters).into_par_iter().for_each(|_| {
+        black_box(op());
+    });
+    start.elapsed()
+}
+
 fn inner_product<S: InnerProductScheme<E>, E: Pairing>(c: &mut Criterion, curve: &str) {
     for n in LENGTHS {
         let rng = &mut ark_std::test_rng();
@@ -58,6 +68,10 @@ fn inner_product<S: InnerProductScheme<E>, E: Pairing>(c: &mut Criterion, curve:
         group.bench_function("Dec", |b| b.iter(|| decrypt(&sk, &ct)));
         group.bench_function("Prepare", |b| b.iter(|| S::prepare(&sk)));
         group.bench_function("PreparedDec", |b| b.iter(|| decrypt_prepared(&prepared, &ct)));
+        group.throughput(Throughput::Elements(1));
+        group.bench_function("PreparedDecParallel", |b| {
+            b.iter_custom(|iters| on_every_thread(iters, || decrypt_prepared(&prepared, &ct)))
+        });
         group.finish();
     }
 }
@@ -85,6 +99,10 @@ fn quadratic<S: QuadraticScheme<E>, E: Pairing>(c: &mut Criterion, curve: &str) 
         group.bench_function("Dec", |b| b.iter(|| decrypt(&sk, &ct)));
         group.bench_function("Prepare", |b| b.iter(|| S::prepare(&sk)));
         group.bench_function("PreparedDec", |b| b.iter(|| decrypt_prepared(&prepared, &ct)));
+        group.throughput(Throughput::Elements(1));
+        group.bench_function("PreparedDecParallel", |b| {
+            b.iter_custom(|iters| on_every_thread(iters, || decrypt_prepared(&prepared, &ct)))
+        });
         group.finish();
     }
 }

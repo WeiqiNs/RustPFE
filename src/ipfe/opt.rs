@@ -2,8 +2,8 @@ use ark_ec::pairing::Pairing;
 use ark_std::rand::Rng;
 
 use crate::group::{
-    self, DlogTable, G1, G2, G2Prepared, Gt, Matrix, PairingProduct, Scalar, ShapeError, VectorOps, concat, g1_mul_vec,
-    g2_mul_vec, gt_generator, int_vector, random_vector,
+    self, DlogTable, G1, G2, G2Prepared, G2Side, Gt, Matrix, PairingProduct, Scalar, ShapeError, VectorOps, concat,
+    g1_mul_vec, g2_mul_vec, gt_generator, int_vector, random_vector,
 };
 
 #[derive(Clone, Debug)]
@@ -33,7 +33,7 @@ pub struct PreparedKey<E: Pairing> {
 }
 
 pub trait DecryptionKey<E: Pairing> {
-    type Point: Clone + Into<G2Prepared<E>>;
+    type Point: G2Side<E>;
     fn sides(&self) -> (&[Self::Point], &[Self::Point]);
 }
 
