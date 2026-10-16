@@ -25,10 +25,19 @@ gate. From `python/`, inside an activated Python 3.11+ virtual environment:
 
 ```bash
 cargo fmt --check && cargo clippy --all-targets -- -D warnings
+python stubgen.py && test -z "$(git status --porcelain .)"   # the committed stubs match their template
 python -m pip install . && python -m pytest tests -q   # as CI; maturin develop --release to iterate
+python -m pip install mypy && python -m mypy.stubtest pfe   # the stubs match the installed binding
 ```
 
 The binding checks key and ciphertext lengths and dlog bounds before calling Rust, so Python never sees a panic.
+
+maturin builds the extension as `pfe.pfe` in the mixed layout: `python/python/pfe` holds only the re-export shim
+`__init__.py`, `py.typed` and the type stubs, including `pfe.pyi`, which mirrors the shim for the extension module. The
+`pfe.ipfe` and `pfe.qfe` scheme modules exist only at runtime, created by the extension and registered in `sys.modules`,
+so their directories hold stubs and no `.py`. `stubgen.py` renders the family and scheme stubs from one template and a
+table mirroring the `ipfe_module!` and `qfe_module!` calls; the root `__init__.pyi` is hand-written. Any change to a
+scheme's Python surface updates `stubgen.py` and regenerates the stubs, or stubtest fails.
 
 ## Invariants
 

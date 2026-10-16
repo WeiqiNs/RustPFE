@@ -4,3 +4,5 @@ lcov.info
 python/dist/
 __pycache__/
 .pytest_cache/
+.mypy_cache/
+python/python/pfe/*.so

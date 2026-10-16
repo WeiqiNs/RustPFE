@@ -10,5 +10,6 @@ license = "Apache-2.0"
 requires-python = ">=3.11"
 
 [tool.maturin]
-module-name = "pfe"
+python-source = "python"
+module-name = "pfe.pfe"
 features = ["pyo3/extension-module"]

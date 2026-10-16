@@ -91,7 +91,8 @@ Add `pfe = { git = "https://github.com/WeiqiNs/RustPFE" }` and a curve such as `
 
 The Python binding in `python/` (Python 3.11+) covers BLS12-381 with the same names, `pfe.ipfe.{bjk,tao,kim,lin,kks,opt}`,
 `pfe.qfe.{bcfg,sgp}`, `pfe.DlogTable` and `pfe.DecodeError`; bad input raises `ValueError`, and values support
-`bytes()`, `Type.from_bytes()` and pickle.
+`bytes()`, `Type.from_bytes()` and pickle. It ships type stubs (`py.typed`), which mypy's stubtest checks against the
+built extension in CI.
 
 ## Build and test
 
@@ -99,6 +100,7 @@ The Python binding in `python/` (Python 3.11+) covers BLS12-381 with the same na
 cargo test
 cargo bench
 cd python && pip install . && pytest tests
+pip install mypy && python -m mypy.stubtest pfe
 ```
 
 ## The PFE family
