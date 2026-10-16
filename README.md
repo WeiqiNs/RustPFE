@@ -3,145 +3,115 @@
 [![RustPFE CI](https://github.com/WeiqiNs/RustPFE/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/WeiqiNs/RustPFE/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/WeiqiNs/RustPFE/graph/badge.svg)](https://codecov.io/gh/WeiqiNs/RustPFE)
 
-**RustPFE** is a Rust library of pairing-based functional encryption: private-key *function-hiding* inner-product
-functional encryption (IPFE) and public-key quadratic functional encryption (QFE). Every scheme is generic over an
-[arkworks](https://github.com/arkworks-rs/algebra) pairing curve and is tested on BLS12-381 and BN254. It is the Rust
-counterpart of [LibPFE](https://github.com/WeiqiNs/LibPFE) and [GoPFE](https://github.com/WeiqiNs/GoPFE), with the
-same constructions and the same tests.
-
-## Supported schemes
-
-### Inner-product FE
-
-A key for y decrypts a ciphertext of x to the inner product ⟨x, y⟩.
-
-| Scheme | Module | Function hiding | Security | Ciphertext | Fixed-base `decrypt` | Reference |
-| --- | --- | :---: | --- | :---: | :---: | --- |
-| Bishop et al. | `pfe::ipfe::bjk` | weak | SXDH | 2n + 6 | no | [ASIACRYPT 2015](https://doi.org/10.1007/978-3-662-48797-6_20) |
-| Tomida et al. | `pfe::ipfe::tao` | full | XDLIN | 2n + 5 | yes | [ISC 2016](https://doi.org/10.1007/978-3-319-45871-7_24) |
-| Kim et al. | `pfe::ipfe::kim` | full | SIM, generic group model | n + 1 | no | [SCN 2018](https://doi.org/10.1007/978-3-319-98113-0_29) |
-| Lin | `pfe::ipfe::lin` | full | SXDH | 2n + 2 | yes | [CRYPTO 2017](https://doi.org/10.1007/978-3-319-63688-7_20) |
-| Kim, Kim and Seo | `pfe::ipfe::kks` | full | SXDH | 2n + 8 | yes | [TCS 2019](https://doi.org/10.1016/j.tcs.2019.03.016) |
-| Ojaswi et al. | `pfe::ipfe::opt` | full | SIM, generic group model | n + 4 | yes | [CiC 2025](https://doi.org/10.62056/abe0zo-3y) |
-
-For vectors of length n, a ciphertext has the listed number of G1 elements and a key the same number of G2 elements.
-Lin's scheme is the paper's weakly function-hiding scheme, lifted to full function hiding as the paper describes.
-
-### Quadratic FE
-
-A key for an n × n matrix F decrypts a ciphertext of (x, y) to xᵀFy. Anyone with the public key can encrypt.
-
-| Scheme | Module | Security | Ciphertext | Key | Reference |
-| --- | --- | --- | :---: | :---: | --- |
-| Baltico et al. | `pfe::qfe::bcfg` | adaptive, generic group model | 2n G1 + (2n + 2) G2 | (n + 2) G1 + n G2 | [CRYPTO 2017](https://doi.org/10.1007/978-3-319-63688-7_3) |
-| Dufour-Sans et al. | `pfe::qfe::sgp` | generic group model | (2n + 1) G1 + 2n G2 | 1 G2 | [NeurIPS 2019](https://proceedings.neurips.cc/paper_files/paper/2019/hash/9d28de8ff9bb6a3fa41fddfdc28f3bc1-Abstract.html) |
-
-Both decrypt against a fixed base, and keys also carry F. A Baltico et al. key also carries the products of F with the
-master key that decryption would otherwise derive from the public key. Dufour-Sans et al.'s scheme appears in the
-NeurIPS paper by Ryffel, Dufour-Sans, Gay, Bach and Pointcheval.
-
-## Usage
-
-```toml
-[dependencies]
-pfe = { git = "https://github.com/WeiqiNs/RustPFE" }
-ark-bls12-381 = "0.6"
-```
+Functional encryption lets the holder of a key learn one function of encrypted data, such as an inner product, and
+nothing else. RustPFE implements eight published pairing-based schemes in safe Rust, six function-hiding inner-product
+functional encryption (IPFE) schemes and two quadratic functional encryption (QFE) schemes, generic over any
+[arkworks](https://github.com/arkworks-rs/algebra) pairing curve, tested on BLS12-381 and BN254, with a PyO3 Python
+binding.
 
 ```rust
 use ark_bls12_381::Bls12_381;
 use pfe::group::DlogTable;
 use pfe::ipfe::opt;
-use pfe::qfe::sgp;
 use pfe::rand::rngs::OsRng;
 
 let rng = &mut OsRng;
-let msk = opt::setup::<Bls12_381, _>(3, rng);
+let msk = opt::setup::<Bls12_381, _>(3, rng)?;
 let table = DlogTable::new(opt::base::<Bls12_381>(), -1000, 1000);
 let sk = opt::keygen(&msk, &[1, 2, 3], rng)?;
 let ct = opt::encrypt(&msk, &[4, -5, 6], rng)?;
-let result = opt::decrypt(&table, &sk, &ct);
-let prepared = opt::prepare(&sk);
-let same_result = opt::decrypt(&table, &prepared, &ct);
-
-let (pk, msk) = sgp::setup::<Bls12_381, _>(2, rng);
-let table = DlogTable::new(sgp::base::<Bls12_381>(), -1000, 1000);
-let sk = sgp::keygen(&msk, &[[1, 2], [0, -1]])?;
-let ct = sgp::encrypt(&pk, &[3, 4], &[5, -6], rng)?;
-let result = sgp::decrypt(&table, &sk, &ct);
+assert_eq!(opt::decrypt(&table, &sk, &ct), Some(12));
 ```
 
-`keygen` and `encrypt` return `Err(ShapeError)` when an input has the wrong length or shape, and `decrypt` returns
-`None` when the result falls outside the searched range. Schemes with a fixed-base `decrypt` take a `DlogTable` built
-once for a range (over `msk.base` for Tomida et al. and `base()` for the others) and reused across decryptions; Bishop
-et al. and Kim et al. derive the base from each key and ciphertext, so their `decrypt` takes the bounds instead. Every
-randomized function takes the random number generator explicitly.
+```python
+from pfe.ipfe import opt
+import pfe
 
-Every scheme also has `prepare(&sk)`, which precomputes the key's pairing lines once (arkworks' `G2Prepared`) and
-returns a `PreparedKey`. `decrypt` accepts either a `Key` or a `PreparedKey`, the two types implementing the scheme's
-`DecryptionKey` trait, and returns the same result for both. An IPFE key is all of its decryption's G2 side, so its
-prepared `decrypt` costs about two thirds to three quarters of `decrypt` with the key; prepare a key that will decrypt
-many ciphertexts. A QFE decryption also pairs the ciphertext's own G2 points, which no key can prepare, so a prepared
-Baltico et al. key saves less, and a prepared Dufour-Sans et al. key, which fixes one G2 point, decrypts in about the
-time of the plain key. A prepared key holds about 20 KB per G2 point on BLS12-381.
+msk = opt.setup(3)
+table = pfe.DlogTable(opt.base(), -1000, 1000)
+assert opt.decrypt(table, opt.keygen(msk, [1, 2, 3]), opt.encrypt(msk, [4, -5, 6])) == 12
+```
 
-The `group` module wraps arkworks with the operations the schemes need: vectors and matrices over the scalar field,
-fixed-base and multi-scalar multiplication, multi-pairing products and baby-step giant-step discrete logarithms.
-Fixed-base multiplication reuses one table of generator multiples per curve group, built on first use and kept for the
-life of the process.
+## What functional encryption is for
 
-## Benchmarks
+In ordinary encryption a key decrypts everything or nothing. In functional encryption the holder of the master key
+issues keys for specific functions: a key for the vector y, applied to an encryption of x, yields ⟨x, y⟩ and nothing
+else about x. That is enough for weighted sums, statistics or a linear classifier over data the computing party never
+sees; quadratic FE extends it to degree-2 polynomials such as xᵀFy, and a function-hiding scheme also hides y, so
+neither side learns the other's vector. The inner-product schemes here are secret-key (`encrypt` takes the master key),
+the quadratic schemes public-key, and all rely on bilinear pairings, hence pairing-friendly curves such as BLS12-381.
 
-`benches/schemes.rs` times every scheme on BLS12-381 and BN254 with the same input sizes and bounds as LibPFE's and
-GoPFE's benchmarks, and checks each decryption against the true result before timing it. Run it with `cargo bench`.
+## Highlights
 
-The numbers below are milliseconds per operation on BLS12-381 on one core (`taskset -c 2`), measured with Rust 1.99 and
-arkworks 0.6 on an AMD Ryzen 7 9800X3D. Inputs are random vectors (and matrices) whose results lie in [0, 10000].
-Fixed-base schemes reuse one discrete-log table, which is excluded from Dec; Bishop et al. and Kim et al. search the
-range on every decryption. Prepare is the one-time cost of `prepare(&sk)`, and Prepared Dec decrypts with the prepared
-key.
+- **Eight schemes from the literature**, tested together on BLS12-381 and BN254 through one generic test suite.
+- **Fast and parallel.** A `parallel` feature, on by default, spreads the work over all cores with results identical
+  to the sequential build. With Ojaswi et al.'s scheme on BLS12-381, a prepared key decrypts a length-10 inner product
+  in about 1 ms, and 16 threads sharing one key reach about 4,300 decryptions per second.
+- **Safe, thread-safe and hardened.** The crate is `#![forbid(unsafe_code)]`, every key and ciphertext is
+  `Send + Sync`, a regression test pins a deadlock the parallel work once exposed, and decoding rejects truncated,
+  trailing, out-of-range and off-curve input without allocating from untrusted lengths.
+- **Python binding** with PyO3: the same API as `pfe.ipfe.opt` and friends, bytes and pickle support, and the GIL
+  released so Python threads decrypt in parallel.
+- **100% line coverage** in CI, clippy with warnings as errors, and tests with and without the `parallel` feature.
 
-Inner-product FE, n = 10:
+## Schemes
 
-| Scheme | Setup | KeyGen | Enc | Dec | Prepare | Prepared Dec |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Bishop et al. | 0.43 | 0.88 | 0.32 | 6.82 | 1.84 | 4.95 |
-| Tomida et al. | 1.56 | 0.84 | 0.30 | 5.68 | 1.76 | 3.87 |
-| Kim et al. | 0.07 | 0.40 | 0.15 | 3.91 | 0.73 | 3.10 |
-| Lin | 0.00 | 0.73 | 0.26 | 5.11 | 1.66 | 3.66 |
-| Kim, Kim and Seo | 0.00 | 0.95 | 0.32 | 6.28 | 1.97 | 4.33 |
-| Ojaswi et al. | 0.02 | 0.49 | 0.18 | 3.43 | 0.95 | 2.36 |
+Inner-product FE, where a key for y decrypts a ciphertext of x to ⟨x, y⟩:
 
-Inner-product FE, n = 100:
+| Scheme | Module | Function hiding | Security | Paper |
+| --- | --- | :---: | --- | --- |
+| Bishop et al. | `pfe::ipfe::bjk` | weak | SXDH | [ASIACRYPT 2015](https://doi.org/10.1007/978-3-662-48797-6_20) |
+| Tomida et al. | `pfe::ipfe::tao` | full | XDLIN | [ISC 2016](https://doi.org/10.1007/978-3-319-45871-7_24) |
+| Kim et al. | `pfe::ipfe::kim` | full | generic group model | [SCN 2018](https://doi.org/10.1007/978-3-319-98113-0_29) |
+| Lin | `pfe::ipfe::lin` | full | SXDH | [CRYPTO 2017](https://doi.org/10.1007/978-3-319-63688-7_20) |
+| Kim, Kim and Seo | `pfe::ipfe::kks` | full | SXDH | [TCS 2019](https://doi.org/10.1016/j.tcs.2019.03.016) |
+| Ojaswi et al. | `pfe::ipfe::opt` | full | generic group model | [CiC 2025](https://doi.org/10.62056/abe0zo-3y) |
 
-| Scheme | Setup | KeyGen | Enc | Dec | Prepare | Prepared Dec |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Bishop et al. | 197.57 | 7.57 | 3.01 | 44.49 | 15.45 | 29.79 |
-| Tomida et al. | 202.62 | 7.73 | 2.89 | 43.57 | 15.44 | 28.35 |
-| Kim et al. | 23.75 | 3.59 | 1.33 | 23.53 | 7.32 | 15.10 |
-| Lin | 0.01 | 6.64 | 2.27 | 42.59 | 15.57 | 29.07 |
-| Kim, Kim and Seo | 0.02 | 7.08 | 2.42 | 45.28 | 16.26 | 30.02 |
-| Ojaswi et al. | 0.02 | 3.47 | 1.31 | 23.75 | 7.70 | 15.10 |
+Quadratic FE, where a key for a matrix F decrypts a ciphertext of (x, y) to xᵀFy and anyone with the public key can
+encrypt:
 
-Quadratic FE, n = 10:
+| Scheme | Module | Security | Paper |
+| --- | --- | --- | --- |
+| Baltico et al. | `pfe::qfe::bcfg` | adaptive, generic group model | [CRYPTO 2017](https://doi.org/10.1007/978-3-319-63688-7_3) |
+| Dufour-Sans et al. | `pfe::qfe::sgp` | generic group model | [NeurIPS 2019](https://proceedings.neurips.cc/paper_files/paper/2019/hash/9d28de8ff9bb6a3fa41fddfdc28f3bc1-Abstract.html) |
 
-| Scheme | Setup | KeyGen | Enc | Dec | Prepare | Prepared Dec |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Baltico et al. | 0.59 | 0.59 | 8.59 | 7.31 | 0.65 | 6.62 |
-| Dufour-Sans et al. | 0.48 | 0.04 | 8.86 | 5.41 | 0.07 | 5.34 |
+## Using it
 
-Quadratic FE, n = 100:
+Add `pfe = { git = "https://github.com/WeiqiNs/RustPFE" }` and a curve such as `ark-bls12-381 = "0.6"`.
 
-| Scheme | Setup | KeyGen | Enc | Dec | Prepare | Prepared Dec |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Baltico et al. | 4.62 | 5.03 | 80.16 | 67.29 | 7.32 | 61.24 |
-| Dufour-Sans et al. | 4.64 | 0.37 | 84.42 | 48.13 | 0.07 | 48.89 |
+- Every scheme has `setup`, `keygen`, `encrypt`, `prepare` and `decrypt`; randomized functions take the RNG, and
+  `setup`, `keygen` and `encrypt` return `Err(ShapeError)` for a bad length or shape.
+- `decrypt` returns `None` outside the searched range and accepts the key or the prepared key from `prepare(&sk)`,
+  which precomputes its pairing work once. Bishop et al. and Kim et al. take the range directly; the others share one
+  `DlogTable` built over `base()` (Tomida et al.: `msk.base()`).
+- `MasterKey`, `PublicKey`, `Key` and `Ciphertext` implement `pfe::group::Encoding`: n as a 4-byte big-endian integer,
+  then the fields in declaration order in arkworks' compressed form, with every length derived from n; `decode` returns
+  a `pfe::group::DecodeError` for malformed input.
+- `default-features = false` gives a sequential build; `RAYON_NUM_THREADS` bounds the parallel one.
 
-## Testing
+The Python binding in `python/` (Python 3.11+) covers BLS12-381 with the same names, `pfe.ipfe.{bjk,tao,kim,lin,kks,opt}`,
+`pfe.qfe.{bcfg,sgp}`, `pfe.DlogTable` and `pfe.DecodeError`; bad input raises `ValueError`, and values support
+`bytes()`, `Type.from_bytes()` and pickle.
+
+## Build and test
 
 ```bash
 cargo test
-cargo llvm-cov --tests --ignore-filename-regex '(tests|benches)/' --fail-under-lines 100
+cargo bench
+cd python && pip install . && pytest tests
 ```
 
-`tests/schemes.rs` runs the same cases against every scheme on both curves, and CI requires 100% line coverage.
+## The PFE family
+
+LibPFE, GoPFE and RustPFE implement the same eight inner-product and quadratic functional encryption
+schemes with the same test cases and benchmark inputs, so the three languages compare like for like; LibRBP is the
+pairing layer under LibPFE.
+
+| Repository | Language | Pairing backend | Role |
+| --- | --- | --- | --- |
+| [LibRBP](https://github.com/WeiqiNs/LibRBP) | C++20 | [RELIC](https://github.com/relic-toolkit/relic) | Typed, thread-safe pairing library: curves, groups, pairings, linear algebra, dlog tables |
+| [LibPFE](https://github.com/WeiqiNs/LibPFE) | C++20 | LibRBP | The eight schemes as header-only templates over any LibRBP curve |
+| [GoPFE](https://github.com/WeiqiNs/GoPFE) | Go | [gnark-crypto](https://github.com/Consensys/gnark-crypto) | The eight schemes on BLS12-381, parallel across `GOMAXPROCS` |
+| **RustPFE** (this repo) | Rust, Python | [arkworks](https://github.com/arkworks-rs/algebra) | The eight schemes in safe Rust over any arkworks pairing curve, with a PyO3 Python binding |
+
+Licensed under Apache-2.0.
