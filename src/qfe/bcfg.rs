@@ -26,12 +26,17 @@ pub struct PublicKey<E: Pairing> {
 }
 
 #[derive(Clone, Debug)]
-pub struct Key<E: Pairing> {
-    n: usize,
+pub struct KeyBody<E: Pairing> {
     f: Matrix<Scalar<E>>,
     s1: G1<E>,
     s2: G1<E>,
     af: Vec<G1<E>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Key<E: Pairing> {
+    n: usize,
+    body: KeyBody<E>,
     fb: Vec<G2<E>>,
 }
 
@@ -49,13 +54,13 @@ pub struct Ciphertext<E: Pairing> {
 #[derive(Clone, Debug)]
 pub struct PreparedKey<E: Pairing> {
     n: usize,
-    key: Key<E>,
+    body: KeyBody<E>,
     fb: Vec<G2Prepared<E>>,
 }
 
 pub trait DecryptionKey<E: Pairing> {
     type Point: G2Side<E>;
-    fn split(&self) -> (&Key<E>, &[Self::Point]);
+    fn split(&self) -> (&KeyBody<E>, &[Self::Point]);
 }
 
 pub fn setup<E: Pairing, R: Rng + ?Sized>(n: usize, rng: &mut R) -> Result<(PublicKey<E>, MasterKey<E>), ShapeError> {
@@ -85,11 +90,13 @@ pub fn keygen<E: Pairing, Row: AsRef<[i64]>, R: Rng + ?Sized>(
     let fb = f.mul_vec(&msk.b);
     Ok(Key {
         n: msk.n,
-        s1: g1_mul::<E>(msk.a.inner(&fb) + gamma * msk.w),
-        s2: g1_mul::<E>(gamma),
-        af: g1_mul_vec::<E>(&msk.a.mul_mat(&f)),
+        body: KeyBody {
+            s1: g1_mul::<E>(msk.a.inner(&fb) + gamma * msk.w),
+            s2: g1_mul::<E>(gamma),
+            af: g1_mul_vec::<E>(&msk.a.mul_mat(&f)),
+            f,
+        },
         fb: g2_mul_vec::<E>(&fb),
-        f,
     })
 }
 
@@ -117,33 +124,33 @@ pub fn encrypt<E: Pairing, R: Rng + ?Sized>(
 pub fn prepare<E: Pairing>(sk: &Key<E>) -> PreparedKey<E> {
     PreparedKey {
         n: sk.n,
-        key: sk.clone(),
+        body: sk.body.clone(),
         fb: group::prepare::<E>(&sk.fb),
     }
 }
 
 pub fn decrypt<E: Pairing>(table: &DlogTable<E>, sk: &impl DecryptionKey<E>, ct: &Ciphertext<E>) -> Option<i64> {
-    let (key, fb) = sk.split();
+    let (body, fb) = sk.split();
     let mut e = PairingProduct::default();
-    e.mul_bilinear(&ct.c, &key.f, &ct.d);
-    e.div(&key.af, &ct.d_hat);
+    e.mul_bilinear(&ct.c, &body.f, &ct.d);
+    e.div(&body.af, &ct.d_hat);
     e.div(&ct.c_hat, fb);
-    e.div(&[key.s1], &[ct.e]);
-    e.mul(&[key.s2], &[ct.e_hat]);
+    e.div(&[body.s1], &[ct.e]);
+    e.mul(&[body.s2], &[ct.e_hat]);
     table.find(e.value())
 }
 
 impl<E: Pairing> DecryptionKey<E> for Key<E> {
     type Point = G2<E>;
-    fn split(&self) -> (&Key<E>, &[G2<E>]) {
-        (self, &self.fb)
+    fn split(&self) -> (&KeyBody<E>, &[G2<E>]) {
+        (&self.body, &self.fb)
     }
 }
 
 impl<E: Pairing> DecryptionKey<E> for PreparedKey<E> {
     type Point = G2Prepared<E>;
-    fn split(&self) -> (&Key<E>, &[G2Prepared<E>]) {
-        (&self.key, &self.fb)
+    fn split(&self) -> (&KeyBody<E>, &[G2Prepared<E>]) {
+        (&self.body, &self.fb)
     }
 }
 
@@ -186,10 +193,10 @@ impl<E: Pairing> Encoding for PublicKey<E> {
 impl<E: Pairing> Encoding for Key<E> {
     fn encode(&self) -> Vec<u8> {
         Encoder::new(self.n)
-            .matrix(&self.f)
-            .one(&self.s1)
-            .one(&self.s2)
-            .many(&self.af)
+            .matrix(&self.body.f)
+            .one(&self.body.s1)
+            .one(&self.body.s2)
+            .many(&self.body.af)
             .many(&self.fb)
             .bytes()
     }
@@ -198,10 +205,12 @@ impl<E: Pairing> Encoding for Key<E> {
         group::decode::<E, _>(data, |dec, n| {
             Ok(Self {
                 n,
-                f: dec.matrix(n, n)?,
-                s1: dec.g1()?,
-                s2: dec.g1()?,
-                af: dec.g1s(n)?,
+                body: KeyBody {
+                    f: dec.matrix(n, n)?,
+                    s1: dec.g1()?,
+                    s2: dec.g1()?,
+                    af: dec.g1s(n)?,
+                },
                 fb: dec.g2s(n)?,
             })
         })
