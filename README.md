@@ -105,15 +105,13 @@ pip install mypy && python -m mypy.stubtest pfe
 
 ## The PFE family
 
-LibPFE, GoPFE and RustPFE implement the same eight inner-product and quadratic functional encryption
-schemes with the same test cases and benchmark inputs, so the three languages compare like for like; LibRBP is the
-pairing layer under LibPFE.
+LibPFE, GoPFE, RustPFE and CudaPFE implement the same eight inner-product and quadratic functional encryption
+schemes. LibPFE, GoPFE and RustPFE share test cases and benchmark inputs, and CudaPFE batches the schemes on CPUs
+and NVIDIA GPUs.
 
 | Repository | Language | Pairing backend | Role |
 | --- | --- | --- | --- |
-| [LibRBP](https://github.com/WeiqiNs/LibRBP) | C++20 | [RELIC](https://github.com/relic-toolkit/relic) | Typed, thread-safe pairing library: curves, groups, pairings, linear algebra, dlog tables |
-| [LibPFE](https://github.com/WeiqiNs/LibPFE) | C++20 | LibRBP | The eight schemes as header-only templates over any LibRBP curve |
+| [LibPFE](https://github.com/WeiqiNs/LibPFE) | C++20 | [LibRBP](https://github.com/WeiqiNs/LibRBP) | The eight schemes as header-only templates over any LibRBP curve |
 | [GoPFE](https://github.com/WeiqiNs/GoPFE) | Go | [gnark-crypto](https://github.com/Consensys/gnark-crypto) | The eight schemes on BLS12-381, parallel across `GOMAXPROCS` |
 | **RustPFE** (this repo) | Rust, Python | [arkworks](https://github.com/arkworks-rs/algebra) | The eight schemes in safe Rust over any arkworks pairing curve, with a PyO3 Python binding |
-
-Licensed under Apache-2.0.
+| [CudaPFE](https://github.com/WeiqiNs/CudaPFE) | C++20, CUDA | Own BLS12-381 arithmetic on [sppark](https://github.com/supranational/sppark) fields | The eight schemes batched on a CPU or NVIDIA GPU engine |
