@@ -86,6 +86,9 @@ jobs:
   python:
     name: Python binding
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: [ "3.11", "3.13" ]
     defaults:
       run:
         working-directory: python
@@ -102,7 +105,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python }}
 
       - name: Cache the build
         uses: Swatinem/rust-cache@v2

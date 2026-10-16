@@ -16,13 +16,15 @@ macro_rules! encoded_class {
         #[pymethods]
         impl $name {
             #[new]
-            fn new(data: &[u8]) -> PyResult<Self> {
-                Self::from_bytes(data)
+            fn new(py: Python<'_>, data: &[u8]) -> PyResult<Self> {
+                Self::from_bytes(py, data)
             }
 
             #[staticmethod]
-            fn from_bytes(data: &[u8]) -> PyResult<Self> {
-                <$inner as Encoding>::decode(data).map(Self).map_err(errors::decode)
+            fn from_bytes(py: Python<'_>, data: &[u8]) -> PyResult<Self> {
+                py.detach(|| <$inner as Encoding>::decode(data))
+                    .map(Self)
+                    .map_err(errors::decode)
             }
 
             fn __bytes__<'py>(&self, py: Python<'py>) -> Bound<'py, PyBytes> {

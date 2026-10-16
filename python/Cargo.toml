@@ -14,4 +14,4 @@ crate-type = ["cdylib"]
 [dependencies]
 ark-bls12-381 = "0.6"
 pfe = { path = ".." }
-pyo3 = { version = "0.30", features = ["abi3-py313"] }
+pyo3 = { version = "0.30", features = ["abi3-py311"] }
