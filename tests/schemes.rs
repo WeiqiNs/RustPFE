@@ -114,23 +114,21 @@ fn inner_product_encodings_round_trip_and_decrypt<S: InnerProductScheme<E>, E: P
     );
 }
 
-fn rejects_inner_product_dimensions_outside_the_encodable_range<S: InnerProductScheme<E>, E: Pairing>() {
-    let rng = &mut ark_std::test_rng();
+fn assert_rejects_unencodable_dimensions(name: &str, mut setup: impl FnMut(usize) -> Option<ShapeError>) {
+    assert_eq!(setup(0), Some(ShapeError { expected: 1, actual: 0 }), "{name}");
     assert_eq!(
-        S::setup(0, rng).err(),
-        Some(ShapeError { expected: 1, actual: 0 }),
-        "{}",
-        S::NAME
-    );
-    assert_eq!(
-        S::setup(MAX_DIMENSION + 1, rng).err(),
+        setup(MAX_DIMENSION + 1),
         Some(ShapeError {
             expected: MAX_DIMENSION,
             actual: MAX_DIMENSION + 1
         }),
-        "{}",
-        S::NAME
+        "{name}"
     );
+}
+
+fn rejects_inner_product_dimensions_outside_the_encodable_range<S: InnerProductScheme<E>, E: Pairing>() {
+    let rng = &mut ark_std::test_rng();
+    assert_rejects_unencodable_dimensions(S::NAME, |n| S::setup(n, rng).err());
 }
 
 fn quadratic_function() -> Vec<Vec<i64>> {
@@ -249,19 +247,40 @@ fn quadratic_encodings_round_trip_and_decrypt<S: QuadraticScheme<E>, E: Pairing>
 
 fn rejects_quadratic_dimensions_outside_the_encodable_range<S: QuadraticScheme<E>, E: Pairing>() {
     let rng = &mut ark_std::test_rng();
-    assert_eq!(
-        S::setup(0, rng).err(),
-        Some(ShapeError { expected: 1, actual: 0 }),
-        "{}",
+    assert_rejects_unencodable_dimensions(S::NAME, |n| S::setup(n, rng).err());
+}
+
+fn panics_on_mismatched_lengths(decrypt: impl FnOnce() -> Option<i64>) -> bool {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(decrypt)).is_err()
+}
+
+fn panics_on_mismatched_inner_product_key_and_ciphertext<S: InnerProductScheme<E>, E: Pairing>() {
+    let rng = &mut ark_std::test_rng();
+    let msk = S::setup(4, rng).unwrap();
+    let sk = S::keygen(&msk, &[1, -2, 3, 4], rng).unwrap();
+    let prepared = S::prepare(&sk);
+    let ct = S::encrypt(&S::setup(3, rng).unwrap(), &[5, 6, 7], rng).unwrap();
+    let (decrypt, decrypt_prepared) = (S::decryptor(&msk, -100, 100), S::prepared_decryptor(&msk, -100, 100));
+    assert!(panics_on_mismatched_lengths(|| decrypt(&sk, &ct)), "{}", S::NAME);
+    assert!(
+        panics_on_mismatched_lengths(|| decrypt_prepared(&prepared, &ct)),
+        "{}: prepared",
         S::NAME
     );
-    assert_eq!(
-        S::setup(MAX_DIMENSION + 1, rng).err(),
-        Some(ShapeError {
-            expected: MAX_DIMENSION,
-            actual: MAX_DIMENSION + 1
-        }),
-        "{}",
+}
+
+fn panics_on_mismatched_quadratic_key_and_ciphertext<S: QuadraticScheme<E>, E: Pairing>() {
+    let rng = &mut ark_std::test_rng();
+    let (_, msk) = S::setup(3, rng).unwrap();
+    let sk = S::keygen(&msk, &quadratic_function(), rng).unwrap();
+    let prepared = S::prepare(&sk);
+    let (pk, _) = S::setup(2, rng).unwrap();
+    let ct = S::encrypt(&pk, &[1, 2], &[3, 4], rng).unwrap();
+    let (decrypt, decrypt_prepared) = (S::decryptor(-100, 100), S::prepared_decryptor(-100, 100));
+    assert!(panics_on_mismatched_lengths(|| decrypt(&sk, &ct)), "{}", S::NAME);
+    assert!(
+        panics_on_mismatched_lengths(|| decrypt_prepared(&prepared, &ct)),
+        "{}: prepared",
         S::NAME
     );
 }
@@ -300,6 +319,11 @@ macro_rules! inner_product_tests {
             fn encodings_round_trip_and_decrypt() {
                 super::inner_product_encodings_round_trip_and_decrypt::<$scheme, $curve>();
             }
+
+            #[test]
+            fn panics_on_mismatched_key_and_ciphertext() {
+                super::panics_on_mismatched_inner_product_key_and_ciphertext::<$scheme, $curve>();
+            }
         }
     )*};
 }
@@ -337,6 +361,11 @@ macro_rules! quadratic_tests {
             #[test]
             fn encodings_round_trip_and_decrypt() {
                 super::quadratic_encodings_round_trip_and_decrypt::<$scheme, $curve>();
+            }
+
+            #[test]
+            fn panics_on_mismatched_key_and_ciphertext() {
+                super::panics_on_mismatched_quadratic_key_and_ciphertext::<$scheme, $curve>();
             }
         }
     )*};

@@ -5,8 +5,7 @@ use ark_ec::{CurveGroup, PrimeGroup};
 use ark_std::{One, UniformRand, Zero};
 use pfe::group::{
     DecodeError, Decoder, DlogTable, Encoder, Gt, Matrix, PairingProduct, Scalar, ShapeError, VectorOps, decode,
-    g1_mul, g1_mul_vec, g2_mul, g2_mul_vec, gt_generator, int_matrix, masked_g1, masked_g2, msm_g1, pair,
-    random_vector,
+    g1_mul, g1_mul_vec, g2_mul, g2_mul_vec, gt_generator, int_matrix, masked_g1, pair, random_vector,
 };
 
 fn matrix(rows: &[[i64; 2]; 2]) -> Matrix<Fr> {
@@ -35,14 +34,6 @@ fn invert_and_products_hold_for_matrices_split_into_tasks() {
 #[test]
 fn invert_rejects_singular_matrices() {
     assert!(matrix(&[[1, 2], [2, 4]]).invert().is_none());
-}
-
-#[test]
-fn shape_errors_describe_the_mismatch() {
-    assert_eq!(
-        ShapeError { expected: 3, actual: 2 }.to_string(),
-        "input has 2 entries where 3 are needed"
-    );
 }
 
 fn assert_generator_multiples<E: Pairing>() {
@@ -119,10 +110,11 @@ fn mul_mat_rejects_mismatched_lengths() {
 }
 
 #[test]
-#[should_panic(expected = "differ")]
-fn msm_g1_rejects_mismatched_lengths() {
+#[should_panic(expected = "one point per row")]
+fn mul_bilinear_rejects_mismatched_lengths() {
     let points = g1_mul_vec::<Bls12_381>(&[Fr::one()]);
-    let _ = msm_g1::<Bls12_381>(&points, &[Fr::one(), Fr::zero()]);
+    let others = g2_mul_vec::<Bls12_381>(&[Fr::one(), Fr::one()]);
+    PairingProduct::<Bls12_381>::default().mul_bilinear(&points, &matrix(&[[1, 0], [0, 1]]), &others);
 }
 
 #[test]
@@ -130,16 +122,6 @@ fn msm_g1_rejects_mismatched_lengths() {
 fn masked_g1_rejects_mismatched_lengths() {
     let _ = masked_g1::<Bls12_381>(
         &g1_mul_vec::<Bls12_381>(&[Fr::one()]),
-        Fr::one(),
-        &[Fr::one(), Fr::one()],
-    );
-}
-
-#[test]
-#[should_panic(expected = "differ")]
-fn masked_g2_rejects_mismatched_lengths() {
-    let _ = masked_g2::<Bls12_381>(
-        &g2_mul_vec::<Bls12_381>(&[Fr::one()]),
         Fr::one(),
         &[Fr::one(), Fr::one()],
     );

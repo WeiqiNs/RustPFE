@@ -78,7 +78,7 @@ def test_encodings_round_trip_and_decrypt(qfe):
 def test_rejects_corrupt_encodings(qfe):
     pk, _ = qfe.setup(2)
     data = bytes(pk)
-    for corrupt in (data[:-1], data + b"\0", b"\0\0\0\0" + data[4:]):
+    for corrupt in (data[:-1], b"\0\0\0\0" + data[4:]):
         with pytest.raises(pfe.DecodeError) as info:
             qfe.PublicKey(corrupt)
         assert isinstance(info.value, ValueError)

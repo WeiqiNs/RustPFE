@@ -1,11 +1,12 @@
+use ark_ec::CurveGroup;
 use ark_ec::pairing::Pairing;
 use ark_std::UniformRand;
 use ark_std::rand::Rng;
 
 use crate::group::{
-    self, DecodeError, Dimension, DlogTable, Encoder, Encoding, G1, G2, G2Prepared, G2Side, Gt, Matrix, PairingProduct,
-    Scalar, ShapeError, VectorOps, check_dimension, g1_mul, g1_mul_vec, g2_mul, g2_mul_vec, gt_generator, int_matrix,
-    int_vector, masked_g1, masked_g2, random_vector, scale_g2,
+    self, DecodeError, DlogTable, Encoder, Encoding, G1, G2, G2Prepared, G2Side, Gt, Matrix, PairingProduct, Scalar,
+    ShapeError, VectorOps, check_dimension, g1_mul, g1_mul_vec, g2_mul, g2_mul_vec, gt_generator, int_matrix,
+    int_vector, masked_g1, masked_g2, random_vector,
 };
 
 #[derive(Clone, Debug)]
@@ -109,7 +110,7 @@ pub fn encrypt<E: Pairing, R: Rng + ?Sized>(
         d: masked_g2::<E>(&pk.b, s, &y),
         d_hat: masked_g2::<E>(&pk.b, z, &y.scale(r)),
         e: g2_mul::<E>(blind),
-        e_hat: scale_g2::<E>(pk.w, blind),
+        e_hat: (pk.w * blind).into_affine(),
     })
 }
 
@@ -146,35 +147,7 @@ impl<E: Pairing> DecryptionKey<E> for PreparedKey<E> {
     }
 }
 
-impl<E: Pairing> Dimension for MasterKey<E> {
-    fn n(&self) -> usize {
-        self.n
-    }
-}
-
-impl<E: Pairing> Dimension for PublicKey<E> {
-    fn n(&self) -> usize {
-        self.n
-    }
-}
-
-impl<E: Pairing> Dimension for Key<E> {
-    fn n(&self) -> usize {
-        self.n
-    }
-}
-
-impl<E: Pairing> Dimension for PreparedKey<E> {
-    fn n(&self) -> usize {
-        self.n
-    }
-}
-
-impl<E: Pairing> Dimension for Ciphertext<E> {
-    fn n(&self) -> usize {
-        self.n
-    }
-}
+group::dimension!(MasterKey, PublicKey, Key, PreparedKey, Ciphertext);
 
 impl<E: Pairing> Encoding for MasterKey<E> {
     fn encode(&self) -> Vec<u8> {

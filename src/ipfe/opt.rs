@@ -2,9 +2,8 @@ use ark_ec::pairing::Pairing;
 use ark_std::rand::Rng;
 
 use crate::group::{
-    self, DecodeError, Dimension, DlogTable, Encoder, Encoding, G1, G2, G2Prepared, G2Side, Gt, Matrix, PairingProduct,
-    Scalar, ShapeError, VectorOps, check_dimension, concat, g1_mul_vec, g2_mul_vec, gt_generator, int_vector,
-    random_vector,
+    self, DecodeError, DlogTable, Encoder, Encoding, G1, G2, G2Prepared, G2Side, Gt, Matrix, PairingProduct, Scalar,
+    ShapeError, VectorOps, check_dimension, concat, g1_mul_vec, g2_mul_vec, gt_generator, int_vector, random_vector,
 };
 
 #[derive(Clone, Debug)]
@@ -115,29 +114,7 @@ impl<E: Pairing> DecryptionKey<E> for PreparedKey<E> {
     }
 }
 
-impl<E: Pairing> Dimension for MasterKey<E> {
-    fn n(&self) -> usize {
-        self.n
-    }
-}
-
-impl<E: Pairing> Dimension for Key<E> {
-    fn n(&self) -> usize {
-        self.n
-    }
-}
-
-impl<E: Pairing> Dimension for PreparedKey<E> {
-    fn n(&self) -> usize {
-        self.n
-    }
-}
-
-impl<E: Pairing> Dimension for Ciphertext<E> {
-    fn n(&self) -> usize {
-        self.n
-    }
-}
+group::dimension!(MasterKey, Key, PreparedKey, Ciphertext);
 
 impl<E: Pairing> Encoding for MasterKey<E> {
     fn encode(&self) -> Vec<u8> {

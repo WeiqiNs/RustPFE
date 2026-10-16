@@ -58,38 +58,6 @@ macro_rules! with_key {
     };
 }
 
-macro_rules! prepared_key {
-    ($path:literal) => {
-        #[pyclass(frozen, module = $path)]
-        pub struct PreparedKey(pub scheme::PreparedKey<Bls12_381>);
-
-        #[pymethods]
-        impl PreparedKey {
-            #[getter]
-            fn n(&self) -> usize {
-                self.0.n()
-            }
-        }
-
-        #[derive(FromPyObject)]
-        pub enum Decryptor {
-            Key(Py<Key>),
-            Prepared(Py<PreparedKey>),
-        }
-
-        impl Decryptor {
-            fn n(&self) -> usize {
-                with_key!(self, |key| key.n())
-            }
-        }
-
-        #[pyfunction]
-        fn prepare(py: Python<'_>, sk: &Key) -> PreparedKey {
-            PreparedKey(py.detach(|| scheme::prepare(&sk.0)))
-        }
-    };
-}
-
 macro_rules! table_decrypt {
     () => {
         #[pyfunction]
@@ -134,7 +102,34 @@ macro_rules! scheme_module {
             encoded_class!(Key, scheme::Key<Bls12_381>, $path);
             encoded_class!(Ciphertext, scheme::Ciphertext<Bls12_381>, $path);
             $(encoded_class!($class, scheme::$class<Bls12_381>, $path);)*
-            prepared_key!($path);
+
+            #[pyclass(frozen, module = $path)]
+            pub struct PreparedKey(pub scheme::PreparedKey<Bls12_381>);
+
+            #[pymethods]
+            impl PreparedKey {
+                #[getter]
+                fn n(&self) -> usize {
+                    self.0.n()
+                }
+            }
+
+            #[derive(FromPyObject)]
+            pub enum Decryptor {
+                Key(Py<Key>),
+                Prepared(Py<PreparedKey>),
+            }
+
+            impl Decryptor {
+                fn n(&self) -> usize {
+                    with_key!(self, |key| key.n())
+                }
+            }
+
+            #[pyfunction]
+            fn prepare(py: Python<'_>, sk: &Key) -> PreparedKey {
+                PreparedKey(py.detach(|| scheme::prepare(&sk.0)))
+            }
 
             $($items)*
 
@@ -216,12 +211,12 @@ macro_rules! ipfe_module {
 
 macro_rules! qfe_module {
     ($name:ident, $path:literal, keygen) => {
-        qfe_module!(@module $name, $path, |msk, function| scheme::keygen(msk, function));
+        qfe_module!(@module $name, $path, []);
     };
     ($name:ident, $path:literal, keygen(rng)) => {
-        qfe_module!(@module $name, $path, |msk, function| scheme::keygen(msk, function, &mut OsRng));
+        qfe_module!(@module $name, $path, [&mut OsRng]);
     };
-    (@module $name:ident, $path:literal, |$msk:ident, $function:ident| $keygen:expr) => {
+    (@module $name:ident, $path:literal, [$($rng:expr)?]) => {
         scheme_module!(qfe::$name, $path, MasterKey {}, {
             module_base!();
             table_decrypt!();
@@ -235,9 +230,9 @@ macro_rules! qfe_module {
 
             #[pyfunction]
             fn keygen(py: Python<'_>, msk: &MasterKey, function: Vec<Vec<i64>>) -> PyResult<Key> {
-                let $msk = &msk.0;
-                let $function = &function;
-                py.detach(|| $keygen).map(Key).map_err(errors::shape)
+                py.detach(|| scheme::keygen(&msk.0, &function $(, $rng)?))
+                    .map(Key)
+                    .map_err(errors::shape)
             }
 
             #[pyfunction]

@@ -33,6 +33,18 @@ pub trait Dimension {
     fn n(&self) -> usize;
 }
 
+macro_rules! dimension {
+    ($($value:ident),+) => {$(
+        impl<E: ark_ec::pairing::Pairing> $crate::group::Dimension for $value<E> {
+            fn n(&self) -> usize {
+                self.n
+            }
+        }
+    )+};
+}
+
+pub(crate) use dimension;
+
 fn must_match(a: usize, b: usize) {
     assert_eq!(a, b, "group: lengths {a} and {b} differ");
 }
@@ -78,15 +90,6 @@ pub fn g2_mul_vec<E: Pairing>(v: &[Scalar<E>]) -> Vec<G2<E>> {
     generator_table::<E::G2>().batch_mul(v)
 }
 
-pub fn scale_g2<E: Pairing>(p: G2<E>, k: Scalar<E>) -> G2<E> {
-    (p * k).into_affine()
-}
-
-pub fn msm_g1<E: Pairing>(points: &[G1<E>], scalars: &[Scalar<E>]) -> G1<E> {
-    must_match(points.len(), scalars.len());
-    E::G1::msm_unchecked(points, scalars).into_affine()
-}
-
 fn masked<G: CurveGroup>(base: &[G::Affine], r: G::ScalarField, m: &[G::ScalarField]) -> Vec<G::Affine> {
     must_match(base.len(), m.len());
     let encoded = generator_table::<G>().batch_mul(m);
@@ -109,10 +112,6 @@ pub fn prepare<E: Pairing>(qs: &[impl G2Side<E>]) -> Vec<G2Prepared<E>> {
 pub fn pair<E: Pairing>(ps: &[G1<E>], qs: &[impl G2Side<E>]) -> Gt<E> {
     must_match(ps.len(), qs.len());
     E::multi_pairing(ps.iter().copied(), prepare::<E>(qs))
-}
-
-pub fn pair_one<E: Pairing>(p: G1<E>, q: impl Into<G2Prepared<E>>) -> Gt<E> {
-    E::pairing(p, q)
 }
 
 pub fn gt_generator<E: Pairing>() -> Gt<E> {
@@ -155,5 +154,11 @@ impl<E: Pairing> PairingProduct<E> {
 }
 
 fn combine<E: Pairing>(p: &[G1<E>], f: &Matrix<Scalar<E>>) -> Vec<G1<E>> {
-    (0..f.cols()).map(|j| msm_g1::<E>(p, &f.column(j))).collect()
+    (0..f.cols())
+        .map(|j| {
+            E::G1::msm(p, &f.column(j))
+                .expect("group: a bilinear form needs one point per row")
+                .into_affine()
+        })
+        .collect()
 }

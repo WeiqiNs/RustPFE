@@ -14,15 +14,11 @@ pub struct DlogTable<E: Pairing> {
     baby: HashMap<Gt<E>, u64>,
 }
 
-fn baby_step_count(span: u64) -> u64 {
-    span.isqrt() + 1
-}
-
 impl<E: Pairing> DlogTable<E> {
     pub fn new(base: Gt<E>, lo: i64, hi: i64) -> Self {
         assert!(lo <= hi, "dlog: a table needs lo <= hi");
         let span = hi.abs_diff(lo);
-        let steps = baby_step_count(span);
+        let steps = span.isqrt() + 1;
         let mut baby = HashMap::with_capacity(steps as usize);
         let mut power = Gt::<E>::zero();
         for j in 0..steps {
