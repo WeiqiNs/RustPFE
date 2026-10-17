@@ -113,7 +113,7 @@ inner_product_scheme!(Tao, "Tomida et al.", tao, table, |msk| msk.base());
 inner_product_scheme!(Kim, "Kim et al.", kim, range);
 inner_product_scheme!(Lin, "Lin", lin, table, |_msk| lin::base::<E>());
 inner_product_scheme!(Kks, "Kim, Kim and Seo", kks, table, |_msk| kks::base::<E>());
-inner_product_scheme!(Opt, "Ojaswi et al.", opt, table, |_msk| opt::base::<E>());
+inner_product_scheme!(Opt, "Acharya et al.", opt, table, |_msk| opt::base::<E>());
 
 pub struct Bcfg;
 
@@ -158,7 +158,7 @@ impl<E: Pairing> QuadraticScheme<E> for Bcfg {
 pub struct Sgp;
 
 impl<E: Pairing> QuadraticScheme<E> for Sgp {
-    const NAME: &'static str = "Dufour-Sans et al.";
+    const NAME: &'static str = "Ryffel et al.";
     type PublicKey = sgp::PublicKey<E>;
     type MasterKey = sgp::MasterKey<E>;
     type Key = sgp::Key<E>;

@@ -45,7 +45,7 @@ the quadratic schemes public-key, and all rely on bilinear pairings, hence pairi
 
 - **Eight schemes from the literature**, tested together on BLS12-381 and BN254 through one generic test suite.
 - **Fast and parallel.** A `parallel` feature, on by default, spreads the work over all cores with results identical
-  to the sequential build. With Ojaswi et al.'s scheme on BLS12-381, a prepared key decrypts a length-10 inner product
+  to the sequential build. With Acharya et al.'s scheme on BLS12-381, a prepared key decrypts a length-10 inner product
   in about 1 ms, and 16 threads sharing one key reach about 4,300 decryptions per second.
 - **Safe, thread-safe and hardened.** The crate is `#![forbid(unsafe_code)]`, every key and ciphertext is
   `Send + Sync`, a regression test pins a deadlock the parallel work once exposed, and decoding rejects truncated,
@@ -65,7 +65,7 @@ Inner-product FE, where a key for y decrypts a ciphertext of x to ⟨x, y⟩:
 | Kim et al. | `pfe::ipfe::kim` | full | generic group model | [SCN 2018](https://doi.org/10.1007/978-3-319-98113-0_29) |
 | Lin | `pfe::ipfe::lin` | full | SXDH | [CRYPTO 2017](https://doi.org/10.1007/978-3-319-63688-7_20) |
 | Kim, Kim and Seo | `pfe::ipfe::kks` | full | SXDH | [TCS 2019](https://doi.org/10.1016/j.tcs.2019.03.016) |
-| Ojaswi et al. | `pfe::ipfe::opt` | full | generic group model | [CiC 2025](https://doi.org/10.62056/abe0zo-3y) |
+| Acharya et al. | `pfe::ipfe::opt` | full | generic group model | [CiC 2025](https://doi.org/10.62056/abe0zo-3y) |
 
 Quadratic FE, where a key for a matrix F decrypts a ciphertext of (x, y) to xᵀFy and anyone with the public key can
 encrypt:
@@ -73,7 +73,7 @@ encrypt:
 | Scheme | Module | Security | Paper |
 | --- | --- | --- | --- |
 | Baltico et al. | `pfe::qfe::bcfg` | adaptive, generic group model | [CRYPTO 2017](https://doi.org/10.1007/978-3-319-63688-7_3) |
-| Dufour-Sans et al. | `pfe::qfe::sgp` | generic group model | [NeurIPS 2019](https://proceedings.neurips.cc/paper_files/paper/2019/hash/9d28de8ff9bb6a3fa41fddfdc28f3bc1-Abstract.html) |
+| Ryffel et al. | `pfe::qfe::sgp` | generic group model | [NeurIPS 2019](https://proceedings.neurips.cc/paper_files/paper/2019/hash/9d28de8ff9bb6a3fa41fddfdc28f3bc1-Abstract.html) |
 
 ## Using it
 
