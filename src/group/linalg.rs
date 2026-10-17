@@ -208,14 +208,13 @@ impl<F: Field> Matrix<F> {
         let mut pivot_row = zeros(width);
         let mut det = F::one();
         for col in 0..n {
-            let pivot = (col..n).find(|&i| !work[i * width + col].is_zero())?;
+            let (pivot, scale) = (col..n).find_map(|i| work[i * width + col].inverse().map(|scale| (i, scale)))?;
             if pivot != col {
                 let (above, below) = work.split_at_mut(pivot * width);
                 above[col * width..(col + 1) * width].swap_with_slice(&mut below[..width]);
                 det = -det;
             }
             det *= work[col * width + col];
-            let scale = work[col * width + col].inverse()?;
             for (p, x) in pivot_row[col..]
                 .iter_mut()
                 .zip(&work[col * width + col..(col + 1) * width])
