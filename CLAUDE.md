@@ -90,7 +90,7 @@ maturin builds the extension as `pfe.pfe` in the mixed layout (`[tool.maturin]` 
 stubs differ from the committed ones or if stubtest disagrees with the built extension.
 
 The binding validates before calling Rust, so Python gets exceptions rather than panics: `errors::check_match` compares
-key and ciphertext n, and `table::check_bounds` orders the range and caps its span at `MAX_SPAN`. `ShapeError` becomes
+key and ciphertext n, and `table::check_bounds` rejects `lo > hi` and caps its span at `MAX_SPAN`. `ShapeError` becomes
 `ValueError`, `DecodeError` becomes `pfe.DecodeError` (a `ValueError`). Work runs inside `py.detach`, releasing the GIL.
 Encoded types support `bytes()`, `from_bytes` and pickle; `PreparedKey` and `DlogTable` do not.
 
