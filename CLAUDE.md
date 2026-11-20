@@ -66,8 +66,8 @@ stubs; the lists in `python/tests/conftest.py`; the README tables; the sibling r
   identical to the sequential build; CI tests both. `combine` in `src/group.rs` stays sequential because rayon worker
   stacks overflowed inside arkworks' MSM.
 - `generator_table` builds outside the `GENERATOR_TABLES` mutex and inserts with `or_insert_with`, because holding the
-  lock across the rayon-parallel build deadlocked; `tests/tables.rs` pins it. One table is leaked per group `TypeId`
-  (`cached_generator_tables_are_per_curve` in `tests/group.rs`).
+  lock across the rayon-parallel build deadlocked; `tests/tables.rs` pins it. One table is leaked per group `TypeId`;
+  `cached_generator_tables_are_per_curve` in `tests/group.rs` pins the keying, not the count.
 - `#![forbid(unsafe_code)]`. Keys, ciphertexts and decryptors are `Send + Sync`, asserted by the adapter traits' bounds
   and exercised by `decrypt_concurrently` in `tests/schemes.rs`.
 - Scheme fields are private. `setup` rejects n outside `check_dimension` and `keygen`/`encrypt` reject wrong shapes, as
