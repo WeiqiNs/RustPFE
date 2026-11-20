@@ -4,8 +4,9 @@ use ark_ec::pairing::Pairing;
 use ark_ec::{CurveGroup, PrimeGroup};
 use ark_std::{One, UniformRand, Zero};
 use pfe::group::{
-    DecodeError, Decoder, DlogTable, Encoder, Gt, Matrix, PairingProduct, Scalar, ShapeError, VectorOps, decode,
-    g1_mul, g1_mul_vec, g2_mul, g2_mul_vec, gt_generator, int_matrix, masked_g1, pair, random_vector,
+    DecodeError, Decoder, DlogTable, Encoder, Gt, MAX_DIMENSION, Matrix, PairingProduct, Scalar, ShapeError, VectorOps,
+    check_dimension, decode, g1_mul, g1_mul_vec, g2_mul, g2_mul_vec, gt_generator, int_matrix, masked_g1, pair,
+    random_vector,
 };
 
 fn matrix(rows: &[[i64; 2]; 2]) -> Matrix<Fr> {
@@ -36,6 +37,19 @@ fn invert_rejects_singular_matrices() {
     assert!(matrix(&[[1, 2], [2, 4]]).invert().is_none());
 }
 
+#[test]
+fn invert_rejects_non_square_matrices() {
+    let rng = &mut ark_std::test_rng();
+    assert!(Matrix::<Fr>::random(2, 3, rng).invert().is_none());
+    assert!(Matrix::<Fr>::random(3, 2, rng).invert().is_none());
+}
+
+#[test]
+#[should_panic(expected = "column out of range")]
+fn at_rejects_a_column_beyond_the_matrix() {
+    let _ = matrix(&[[1, 2], [3, 4]]).at(0, 2);
+}
+
 fn assert_generator_multiples<E: Pairing>() {
     let z = Scalar::<E>::rand(&mut ark_std::test_rng());
     assert_eq!(g1_mul::<E>(z), (E::G1::generator() * z).into_affine());
@@ -60,6 +74,15 @@ fn dlog_table_finds_exactly_its_range() {
             "base^{exponent}"
         );
     }
+    assert_eq!(DlogTable::new(base, 0, 10).find(base * Fr::from(11)), None);
+    let single = DlogTable::new(base, 5, 5);
+    assert_eq!(single.find(base * Fr::from(5)), Some(5));
+    assert_eq!(single.find(base * Fr::from(6)), None);
+}
+
+#[test]
+fn check_dimension_accepts_the_largest_encodable_dimension() {
+    assert_eq!(check_dimension(MAX_DIMENSION), Ok(()));
 }
 
 #[test]
@@ -194,7 +217,6 @@ fn decode_accepts_well_formed_input_and_rejects_malformed_input() {
     type Read = fn(&mut Decoder<'_, Bls12_381>, usize) -> Result<(), DecodeError>;
     let scalar: Read = |d, _| d.scalar().map(|_| ());
     let g1: Read = |d, _| d.g1().map(|_| ());
-    let square: Read = |d, n| d.matrix(n, n).map(|_| ());
     let two_by_two: Read = |d, _| d.matrix(2, 2).map(|_| ());
     let three_g2: Read = |d, _| d.g2s(3).map(|_| ());
     let valid_g2 = g2_mul::<Bls12_381>(Fr::from(5));
@@ -209,8 +231,8 @@ fn decode_accepts_well_formed_input_and_rejects_malformed_input() {
         ),
         (
             "dimension beyond the input",
-            [header(1 << 30), vec![0; 64]].concat(),
-            square,
+            [header(1 << 30), Encoder::new(1).one(&Fr::from(7)).bytes()[4..].to_vec()].concat(),
+            scalar,
             Err(DecodeError::Truncated),
         ),
         (

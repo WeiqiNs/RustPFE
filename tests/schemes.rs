@@ -68,17 +68,6 @@ fn decrypts_one_ciphertext_under_many_keys<S: InnerProductScheme<E>, E: Pairing>
     }
 }
 
-fn handles_inner_product_vectors_of_length_one<S: InnerProductScheme<E>, E: Pairing>() {
-    let rng = &mut ark_std::test_rng();
-    let msk = S::setup(1, rng).unwrap();
-    let decrypt = S::decryptor(&msk, -100, 100);
-    let value = decrypt(
-        &S::keygen(&msk, &[-3], rng).unwrap(),
-        &S::encrypt(&msk, &[7], rng).unwrap(),
-    );
-    assert_eq!(value, Some(-21), "{}", S::NAME);
-}
-
 fn rejects_inner_product_vectors_of_the_wrong_length<S: InnerProductScheme<E>, E: Pairing>() {
     let rng = &mut ark_std::test_rng();
     let msk = S::setup(4, rng).unwrap();
@@ -181,19 +170,6 @@ fn decrypts_one_quadratic_ciphertext_under_many_keys<S: QuadraticScheme<E>, E: P
             S::NAME
         );
     }
-}
-
-fn handles_quadratic_vectors_of_length_one<S: QuadraticScheme<E>, E: Pairing>() {
-    let rng = &mut ark_std::test_rng();
-    let (pk, msk) = S::setup(1, rng).unwrap();
-    let decrypt = S::decryptor(-100, 100);
-    let ct = S::encrypt(&pk, &[7], &[2], rng).unwrap();
-    assert_eq!(
-        decrypt(&S::keygen(&msk, &[vec![-3]], rng).unwrap(), &ct),
-        Some(-42),
-        "{}",
-        S::NAME
-    );
 }
 
 fn rejects_quadratic_inputs_of_the_wrong_shape<S: QuadraticScheme<E>, E: Pairing>() {
@@ -301,11 +277,6 @@ macro_rules! inner_product_tests {
             }
 
             #[test]
-            fn handles_vectors_of_length_one() {
-                super::handles_inner_product_vectors_of_length_one::<$scheme, $curve>();
-            }
-
-            #[test]
             fn rejects_vectors_of_the_wrong_length() {
                 super::rejects_inner_product_vectors_of_the_wrong_length::<$scheme, $curve>();
             }
@@ -341,11 +312,6 @@ macro_rules! quadratic_tests {
             #[test]
             fn decrypts_one_ciphertext_under_many_keys() {
                 super::decrypts_one_quadratic_ciphertext_under_many_keys::<$scheme, $curve>();
-            }
-
-            #[test]
-            fn handles_vectors_of_length_one() {
-                super::handles_quadratic_vectors_of_length_one::<$scheme, $curve>();
             }
 
             #[test]

@@ -162,6 +162,7 @@ impl<F: Field> Matrix<F> {
     }
 
     pub fn at(&self, i: usize, j: usize) -> F {
+        assert!(j < self.cols, "linalg: column out of range");
         self.data[i * self.cols + j]
     }
 
@@ -198,6 +199,9 @@ impl<F: Field> Matrix<F> {
     }
 
     pub fn invert(&self) -> Option<(Self, F)> {
+        if self.rows != self.cols {
+            return None;
+        }
         let n = self.rows;
         let width = 2 * n;
         let mut work = zeros(n * width);

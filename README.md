@@ -83,7 +83,8 @@ Add `pfe = { git = "https://github.com/WeiqiNs/RustPFE" }` and a curve such as `
   `setup`, `keygen` and `encrypt` return `Err(ShapeError)` for a bad length or shape.
 - `decrypt` returns `None` outside the searched range and accepts the key or the prepared key from `prepare(&sk)`,
   which precomputes its pairing work once. Bishop et al. and Kim et al. take the range directly; the others share one
-  `DlogTable` built over `base()` (Tomida et al.: `msk.base()`).
+  `DlogTable` built over `base()` (Tomida et al.: `msk.base()`). A range with `lo > hi` panics, as does decrypting
+  with a key and ciphertext of different lengths; the Python binding raises `ValueError` for both.
 - `MasterKey`, `PublicKey`, `Key` and `Ciphertext` implement `pfe::group::Encoding`: n as a 4-byte big-endian integer,
   then the fields in declaration order in arkworks' compressed form, with every length derived from n; `decode` returns
   a `pfe::group::DecodeError` for malformed input.
