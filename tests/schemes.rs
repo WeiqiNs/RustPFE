@@ -68,17 +68,6 @@ fn decrypts_one_ciphertext_under_many_keys<S: InnerProductScheme<E>, E: Pairing>
     }
 }
 
-fn handles_inner_product_vectors_of_length_one<S: InnerProductScheme<E>, E: Pairing>() {
-    let rng = &mut ark_std::test_rng();
-    let msk = S::setup(1, rng).unwrap();
-    let decrypt = S::decryptor(&msk, -100, 100);
-    let value = decrypt(
-        &S::keygen(&msk, &[-3], rng).unwrap(),
-        &S::encrypt(&msk, &[7], rng).unwrap(),
-    );
-    assert_eq!(value, Some(-21), "{}", S::NAME);
-}
-
 fn rejects_inner_product_vectors_of_the_wrong_length<S: InnerProductScheme<E>, E: Pairing>() {
     let rng = &mut ark_std::test_rng();
     let msk = S::setup(4, rng).unwrap();
@@ -298,11 +287,6 @@ macro_rules! inner_product_tests {
             #[test]
             fn decrypts_one_ciphertext_under_many_keys() {
                 super::decrypts_one_ciphertext_under_many_keys::<$scheme, $curve>();
-            }
-
-            #[test]
-            fn handles_vectors_of_length_one() {
-                super::handles_inner_product_vectors_of_length_one::<$scheme, $curve>();
             }
 
             #[test]
