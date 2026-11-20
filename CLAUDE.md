@@ -8,8 +8,8 @@ inputs. `README.md` is the user-facing overview with the scheme table.
 
 ## Commands
 
-As `.github/workflows/ci.yml` runs them, from the root (`cargo test` locally is the default-feature run that CI does
-inside `llvm-cov`):
+As `.github/workflows/ci.yml` runs them, from the root, on stable Rust with `clippy`, `rustfmt`, `llvm-tools-preview`
+and `cargo-llvm-cov` (`cargo test` locally is the default-feature run that CI does inside `llvm-cov`):
 
 ```bash
 cargo fmt --check
@@ -41,8 +41,9 @@ python -m pytest tests -q && python -m mypy.stubtest pfe
 - `src/ipfe/`, `src/qfe/`: one module per scheme, listed in `src/ipfe.rs` and `src/qfe.rs`.
 - `tests/common/mod.rs`: the `InnerProductScheme`/`QuadraticScheme` adapters that `tests/schemes.rs` (generic cases per
   scheme and curve) and `benches/schemes.rs` (criterion) run through. `tests/group.rs` covers the group layer.
-- `python/src/`: `scheme.rs` (the `ipfe_module!`/`qfe_module!` macros), `ipfe.rs`/`qfe.rs` (their invocations),
-  `table.rs` (`Gt`, `DlogTable`), `errors.rs` (error mapping). `python/tests/` is the pytest suite.
+- `python/`: the separate `pfe-py` crate with its own `Cargo.lock`, which root cargo commands do not build.
+  `python/src/`: `lib.rs` (the module root), `scheme.rs` (the `ipfe_module!`/`qfe_module!` macros), `ipfe.rs`/`qfe.rs`
+  (their invocations), `table.rs` (`Gt`, `DlogTable`), `errors.rs` (error mapping). `python/tests/` is the pytest suite.
 - `.cargo/config.toml` enables `bmi2` and `adx` on x86_64 for ark-ff's `asm` feature, for cargo runs inside this
   repo only.
 
@@ -96,6 +97,6 @@ Encoded types support `bytes()`, `from_bytes` and pickle; `PreparedKey` and `Dlo
 
 ## CI
 
-`.github/workflows/ci.yml` runs on pushes and PRs to main: `coverage` (format, both clippy runs, sequential tests,
-coverage with the 100% line gate, Codecov upload over OIDC), `bench` (each benchmark once), and `python` (the binding
-commands across the job's Python matrix). The `python/` crate is outside the coverage gate.
+`.github/workflows/ci.yml` runs on pushes and PRs to main and on manual dispatch: `coverage` (format, both clippy runs,
+sequential tests, coverage with the 100% line gate, Codecov upload over OIDC), `bench` (each benchmark once), and
+`python` (the binding commands across the job's Python matrix). The `python/` crate is outside the coverage gate.
